@@ -10,86 +10,87 @@
  *
  * Strategy
  * --------
- * 1. User fully segments one or more "seed" slices (via the GrabCut dialog).
- * 2. User triggers "Propagate to adjacent slices" with a chosen range.
+ * 1. User fully segments one or more seed slices via the GrabCut dialog.
+ * 2. User triggers propagation with a chosen slice range.
  * 3. For each target slice in order from the seed outward:
  *    a. Load the colour image for that slice.
- *    b. Build an empty trimap (all TRIMAP_UNKNOWN — no new scribbles).
- *       If the target slice already has any user scribbles, those are honoured.
- *    c. Warm-start GrabCut with the GMMs from the most recently propagated
- *       neighbour (the GMMs drift slowly as the fossil changes across slices).
+ *    b. Build a trimap (all TRIMAP_UNKNOWN unless the slice has stored scribbles).
+ *    c. Warm-start GrabCut with the GMMs from the most recently propagated slice.
  *    d. Run a reduced number of GrabCut iterations (default 3).
- *    e. Write the result into GA[] for that slice and save to disk.
- *    f. Update the propagated state so the next slice can use the freshly
- *       re-estimated GMMs rather than the original seed's GMMs.
- * 4. A progress callback is used to update the UI.
+ *    e. Write the result into GA[] for that slice and mark it dirty.
+ *    f. Update the propagated state so the next slice uses freshly-estimated GMMs.
+ * 4. Progress and completion are reported back via Qt signals.
  *
- * Confidence decay
- * ----------------
- * As propagation moves further from the seed, colour models may drift and
- * the segmentation quality degrades. We track a "confidence" value per slice
- * that decays with distance from the seed. Slices below a confidence threshold
- * are flagged so the user knows they need manual checking. The confidence is
- * estimated as the fraction of pixels that changed assignment between
- * consecutive iterations (low change = high confidence).
+ * Confidence estimation
+ * ---------------------
+ * Confidence is estimated as the fraction of UNKNOWN pixels that did not
+ * change assignment between two consecutive iterations. Slices below the
+ * confidence threshold are flagged for manual review.
  *
  * Thread safety
  * -------------
- * propagate() is designed to be called from SPIERSedit's BackThread (QThread)
- * with progress and completion reported back to the main thread via Qt signals.
+ * propagate() is designed to be called from a background QThread.
+ * Progress and completion are signalled back to the main thread via Qt signals.
  *
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #ifndef SLICEPROPAGATION_H
 #define SLICEPROPAGATION_H
 
-#include <QObject>
-#include <QImage>
+#include "grabcut.h"
+
 #include <QByteArray>
+#include <QImage>
+#include <QMetaType>
+#include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QMetaType>
+
 #include <vector>
-#include <functional>
-#include "grabcut.h"
 
 /**
  * @brief Result record for one propagated slice.
  */
 struct PropagationResult
 {
-    int   sliceIndex;     ///< Index into the Files[] list
-    bool  success;        ///< Whether the slice was processed without error
-    double confidence;    ///< 0–1, fraction of pixels that stabilised (higher = better)
-    bool  needsReview;    ///< True if confidence < confidenceThreshold
+    double confidence;  ///< 0-1, fraction of pixels that stabilised (higher = better)
+    bool needsReview;   ///< True if confidence < confidenceThreshold
+    int sliceIndex;     ///< Index into the Files[] list
+    bool success;       ///< Whether the slice was processed without error
 };
 
 /**
- * @brief Parameters controlling the propagation pass.
+ * @brief Parameters controlling a propagation pass.
  */
 struct PropagationParams
 {
-    int seedSlice;         ///< Slice index of the already-segmented seed
-    int firstSlice;        ///< First slice to propagate to (inclusive)
-    int lastSlice;         ///< Last slice to propagate to (inclusive)
-    int segmentIndex;      ///< Which segment (GA[seg]) to write results into
-    int iterations;        ///< GrabCut iterations per slice (default 3)
-    double confidenceThreshold; ///< Below this → needsReview=true (default 0.95)
-    bool overwriteExisting;     ///< If false, skip slices that already have non-trivial GA data
+    double confidenceThreshold; ///< Slices below this value are flagged for review
+    int firstSlice;             ///< First slice to propagate to (inclusive)
+    int iterations;             ///< GrabCut iterations per slice
+    int lastSlice;              ///< Last slice to propagate to (inclusive)
+    bool overwriteExisting;     ///< If false, slices with existing GA data are skipped
+    int seedSlice;              ///< Slice index of the already-segmented seed
+    int segmentIndex;           ///< Which segment index (GA[seg]) to write results into
 
     PropagationParams()
-        : seedSlice(0), firstSlice(0), lastSlice(0), segmentIndex(0),
-          iterations(3), confidenceThreshold(0.95), overwriteExisting(true) {}
+        : confidenceThreshold(0.95)
+        , firstSlice(0)
+        , iterations(3)
+        , lastSlice(0)
+        , overwriteExisting(true)
+        , seedSlice(0)
+        , segmentIndex(0)
+    {}
 };
 
 /**
  * @brief Manages inter-slice GrabCut propagation across the tomogram stack.
  *
- * Emits Qt signals for progress and completion — connect these to the main
+ * Emits Qt signals for progress and completion. Connect these to the main
  * window before calling propagate() on a background thread.
  */
 class SlicePropagation : public QObject
@@ -102,119 +103,135 @@ public:
     /**
      * @brief Set the seed state (GMMs + alpha) from the already-segmented slice.
      *        Must be called before propagate().
+     * @param seedState  GrabCut state to propagate from.
      */
-    void setSeedState(const GrabCutState &state);
+    void setSeedState(const GrabCutState &seedState);
 
     /**
-     * @brief Set the per-slice trimap data for forced scribble regions.
-     *        trimaps[i] is the trimap for slice i. May be empty (all UNKNOWN).
-     *        Size must equal the total number of slices in the dataset.
+     * @brief Set the per-slice trimap data.
+     *        trimaps[i] is the trimap for slice i; may be empty (all UNKNOWN).
+     *        The size must equal the total number of slices in the dataset.
+     * @param trimaps  Per-slice trimap byte arrays.
      */
     void setTrimaps(const std::vector<QByteArray> &trimaps);
 
     /**
      * @brief Set the source colour image file list (mirrors SPIERSedit Files[]).
+     * @param files  List of absolute file paths.
      */
     void setFileList(const QStringList &files);
 
     /**
-     * @brief Image dimensions — must match all slice images.
+     * @brief Set the image dimensions for all slices in the dataset.
+     * @param imageWidth   Pixel width.
+     * @param imageHeight  Pixel height.
+     * @param fw4          Padded row stride (fwidth4) used by SPIERSedit GA[] images.
      */
-    void setImageDimensions(int width, int height, int fwidth4);
+    void setImageDimensions(int imageWidth, int imageHeight, int fw4);
 
     /**
      * @brief Set propagation parameters.
+     * @param params  Parameters to use.
      */
     void setParams(const PropagationParams &params);
 
     /**
      * @brief Cancel a running propagation at the next slice boundary.
-     *        Thread-safe (sets an atomic flag).
      */
     void cancel();
 
     /**
-     * @brief Run the propagation. Designed to be called from a background
-     *        QThread. Emits progressUpdated() and propagationComplete() signals.
-     *        Returns the per-slice results (also available via the signal).
+     * @brief Run the propagation. Designed to be called from a background QThread.
+     *        Emits progressUpdated() and propagationComplete() during execution.
+     * @return  Per-slice results (also delivered via propagationComplete() signal).
      */
     std::vector<PropagationResult> propagate();
 
     /**
-     * @brief Returns true if any slices in the last run were flagged for review.
+     * @brief Returns true if any slice in the last run was flagged for review.
+     * @return  True if at least one result has needsReview set.
      */
     bool hasLowConfidenceSlices() const;
 
     /**
-     * @brief Returns slice indices flagged as needing manual review.
+     * @brief Returns the slice indices flagged as needing manual review.
+     * @return  Vector of slice indices.
      */
     std::vector<int> lowConfidenceSlices() const;
 
 signals:
     /**
      * @brief Emitted periodically during propagation.
-     * @param percent   Overall progress 0–100
-     * @param sliceIdx  Current slice index being processed
+     * @param percent   Overall progress 0-100.
+     * @param sliceIdx  Index of the slice currently being processed.
      */
     void progressUpdated(int percent, int sliceIdx);
 
     /**
-     * @brief Emitted when propagation finishes (or is cancelled).
-     * @param results   Per-slice results
-     * @param cancelled True if stopped early by cancel()
+     * @brief Emitted when propagation finishes or is cancelled.
+     * @param results    Per-slice results.
+     * @param cancelled  True if the run was stopped early by cancel().
      */
     void propagationComplete(std::vector<PropagationResult> results, bool cancelled);
 
 private:
-    GrabCutState   seedState_;
-    std::vector<QByteArray> trimaps_;
-    QStringList    files_;
-    PropagationParams params_;
-    int W_ = 0, H_ = 0, fwidth4_ = 0;
-
-    std::vector<PropagationResult> results_;
-    volatile bool cancelFlag_ = false;
-
-    /**
-     * @brief Load and decode one colour slice from disk.
-     *        Returns a null QImage on failure.
-     */
-    QImage loadSliceImage(int sliceIndex) const;
+    bool cancelFlag;                     ///< Set by cancel() to stop the propagation loop
+    int fwidth4;                         ///< Padded row stride for GA[] images
+    QStringList files;                   ///< Source image file paths
+    int sliceHeight;                     ///< Image height in pixels
+    int sliceWidth;                      ///< Image width in pixels
+    GrabCutState seedState;              ///< Seed GMM state from the annotated slice
+    PropagationParams params;            ///< Active propagation parameters
+    std::vector<PropagationResult> results; ///< Accumulated per-slice results
+    std::vector<QByteArray> trimaps;     ///< Per-slice trimap data
 
     /**
-     * @brief Load the existing trimap for slice i, or return an all-UNKNOWN
-     *        trimap if none is stored.
-     */
-    QByteArray trimapForSlice(int sliceIndex) const;
-
-    /**
-     * @brief Write the resulting GA image data directly into SPIERSedit's
-     *        in-memory GA[] array and mark the slice dirty for saving.
-     */
-    void writeResultToGA(int sliceIndex, const QByteArray &gaData) const;
-
-    /**
-     * @brief Estimate confidence for a slice: fraction of UNKNOWN pixels
-     *        that did not change assignment between the last two iterations.
-     *        Implemented by running one extra iteration and comparing.
+     * @brief Estimate algorithmic confidence for the current slice by running
+     *        one extra iteration and measuring how many pixels changed assignment.
+     * @param gc      GrabCut engine (modified in place by the extra iteration).
+     * @param trimap  Trimap for this slice (used to identify UNKNOWN pixels).
+     * @return  Confidence value in range 0-1.
      */
     double estimateConfidence(GrabCut &gc, const QByteArray &trimap) const;
 
     /**
-     * @brief Propagate one direction (forward or backward from seed).
-     * @param from   Start slice (exclusive — this slice is already done)
-     * @param to     End slice (inclusive)
-     * @param step   +1 for forward, -1 for backward
-     * @param state  Mutable working state, updated after each slice
-     * @param totalSlices  Total number of slices being processed (for progress)
-     * @param doneCount    Reference to progress counter
+     * @brief Load and decode the colour image for the given slice index.
+     * @param sliceIndex  Index into the files list.
+     * @return  Loaded QImage, or a null QImage on failure.
+     */
+    QImage loadSliceImage(int sliceIndex) const;
+
+    /**
+     * @brief Propagate through a contiguous range of slices in one direction.
+     * @param from         Starting slice (exclusive — this slice is already done).
+     * @param to           End slice (inclusive).
+     * @param step         +1 for forward, -1 for backward.
+     * @param workingState Mutable GrabCut state; updated after each slice.
+     * @param totalSlices  Total slices being processed (for progress percentage).
+     * @param doneCount    Running count of completed slices (updated in place).
      */
     void propagateRange(int from, int to, int step,
-                        GrabCutState &state,
+                        GrabCutState &workingState,
                         int totalSlices, int &doneCount);
-};
 
-#endif // SLICEPROPAGATION_H
+    /**
+     * @brief Return the stored trimap for slice i, or an all-UNKNOWN trimap
+     *        if no scribbles have been recorded for that slice.
+     * @param sliceIndex  Slice index.
+     * @return  Trimap byte array (size = sliceWidth * sliceHeight).
+     */
+    QByteArray trimapForSlice(int sliceIndex) const;
+
+    /**
+     * @brief Write the GrabCut alpha result into the in-memory GA[] image for
+     *        the given slice and mark it dirty for saving.
+     * @param sliceIndex  Slice index.
+     * @param gaData      Alpha data in SPIERSedit GA[] stride format.
+     */
+    void writeResultToGA(int sliceIndex, const QByteArray &gaData) const;
+};
 
 Q_DECLARE_METATYPE(PropagationResult)
 Q_DECLARE_METATYPE(std::vector<PropagationResult>)
+
+#endif // SLICEPROPAGATION_H

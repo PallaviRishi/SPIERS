@@ -5,12 +5,13 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #include "slicepropagation.h"
 #include "fileio.h"
 #include "globals.h"
+#include "grabcutglobals.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -29,94 +30,97 @@ static bool metaTypesRegistered = []() {
 
 SlicePropagation::SlicePropagation(QObject *parent)
     : QObject(parent)
-    , cancelFlag_(false)
+    , cancelFlag(false)
 {}
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 void SlicePropagation::setSeedState(const GrabCutState &state)
 {
-    seedState_ = state;
+    seedState = state;
 }
 
 void SlicePropagation::setTrimaps(const std::vector<QByteArray> &trimaps)
 {
-    trimaps_ = trimaps;
+    trimaps = trimaps;
 }
 
 void SlicePropagation::setFileList(const QStringList &files)
 {
-    files_ = files;
+    files = files;
 }
 
 void SlicePropagation::setImageDimensions(int width, int height, int fw4)
 {
-    W_       = width;
-    H_       = height;
-    fwidth4_ = fw4;
+    sliceWidth       = width;
+    sliceHeight       = height;
+    fwidth4 = fw4;
 }
 
 void SlicePropagation::setParams(const PropagationParams &params)
 {
-    params_ = params;
+    params = params;
 }
 
 void SlicePropagation::cancel()
 {
-    cancelFlag_ = true;
+    cancelFlag = true;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 QImage SlicePropagation::loadSliceImage(int sliceIndex) const
 {
-    if (sliceIndex < 0 || sliceIndex >= files_.size())
+    if (sliceIndex < 0 || sliceIndex >= files.size())
         return QImage();
 
-    QImage img(files_.at(sliceIndex));
+    QImage img(files.at(sliceIndex));
     if (img.isNull())
     {
         qWarning() << "SlicePropagation: could not load image for slice" << sliceIndex
-                   << ":" << files_.at(sliceIndex);
+                   << ":" << files.at(sliceIndex);
     }
     return img;
 }
 
 QByteArray SlicePropagation::trimapForSlice(int sliceIndex) const
 {
-    if (sliceIndex >= 0 && sliceIndex < static_cast<int>(trimaps_.size()))
+    if (sliceIndex >= 0 && sliceIndex < static_cast<int>(trimaps.size()))
     {
-        const QByteArray &tm = trimaps_.at(static_cast<size_t>(sliceIndex));
+        const QByteArray &tm = trimaps.at(static_cast<size_t>(sliceIndex));
         if (!tm.isEmpty())
             return tm;
     }
     // No stored trimap — return all-UNKNOWN
-    return QByteArray(W_ * H_, static_cast<char>(TRIMAP_UNKNOWN));
+    return QByteArray(sliceWidth * sliceHeight, static_cast<char>(TRIMAP_UNKNOWN));
 }
 
 void SlicePropagation::writeResultToGA(int sliceIndex, const QByteArray &gaData) const
 {
-    // GA[seg] is a QImage (Format_Indexed8) with stride fwidth4_.
+    // GA[seg] is a QImage (Format_Indexed8) with stride fwidth4.
     // We set the pixel data directly then mark the slice dirty so fileio
     // will save it on the next autosave / explicit save.
-    if (params_.segmentIndex < 0 || params_.segmentIndex >= SegmentCount)
+    if (params.segmentIndex < 0 || params.segmentIndex >= SegmentCount)
         return;
 
-    QImage *gaImage = GA.at(params_.segmentIndex);
+    QImage *gaImage = GA.at(params.segmentIndex);
     if (!gaImage || gaImage->isNull())
         return;
 
     uchar *bits = gaImage->bits();
-    const int len = fwidth4_ * H_;
+    const int len = fwidth4 * sliceHeight;
     for (int b = 0; b < len && b < gaData.size(); b++)
         bits[b] = static_cast<uchar>(gaData.at(b));
+
+    // Store in the alpha cache so MakeGrabCutGreyScale() can re-apply later
+    grabCutAlphaCache[QPair<int, int>(params.segmentIndex, sliceIndex)] = gaData;
 
     // Mark dirty so the slice gets written to disk
     if (sliceIndex >= 0 && sliceIndex < FilesDirty.size())
         FilesDirty[sliceIndex] = true;
 
-    if (params_.segmentIndex < Segments.size())
-        Segments[params_.segmentIndex]->Dirty = true;
+    if (params.segmentIndex < Segments.size())
+        Segments[params.segmentIndex]->Dirty = true;
 }
 
 // ─── Confidence estimation ────────────────────────────────────────────────────
@@ -134,7 +138,7 @@ double SlicePropagation::estimateConfidence(GrabCut &gc, const QByteArray &trima
     // Count UNKNOWN pixels that changed
     int unknownCount  = 0;
     int changedCount  = 0;
-    int N = W_ * H_;
+    int N = sliceWidth * sliceHeight;
 
     for (int i = 0; i < N; i++)
     {
@@ -170,7 +174,7 @@ void SlicePropagation::propagateRange(int from, int to, int step,
                                        int totalSlices, int &doneCount)
 {
     int current = from + step;
-    while ((step > 0 ? current <= to : current >= to) && !cancelFlag_)
+    while ((step > 0 ? current <= to : current >= to) && !cancelFlag)
     {
         PropagationResult res;
         res.sliceIndex  = current;
@@ -183,7 +187,7 @@ void SlicePropagation::propagateRange(int from, int to, int step,
         if (img.isNull())
         {
             qWarning() << "SlicePropagation: skipping slice" << current << "(load failed)";
-            results_.push_back(res);
+            results.push_back(res);
             current += step;
             doneCount++;
             int pct = static_cast<int>(100.0 * doneCount / totalSlices);
@@ -195,15 +199,15 @@ void SlicePropagation::propagateRange(int from, int to, int step,
         QByteArray tm = trimapForSlice(current);
 
         // ── 3. Overwrite check ────────────────────────────────────────────────
-        if (!params_.overwriteExisting && params_.segmentIndex < SegmentCount)
+        if (!params.overwriteExisting && params.segmentIndex < SegmentCount)
         {
             // Check if GA already has non-trivial data: any pixel != 0
-            QImage *gaImg = GA.at(params_.segmentIndex);
+            QImage *gaImg = GA.at(params.segmentIndex);
             if (gaImg && !gaImg->isNull())
             {
                 const uchar *bits = gaImg->constBits();
                 bool hasData = false;
-                for (int b = 0; b < fwidth4_ * H_; b++)
+                for (int b = 0; b < fwidth4 * sliceHeight; b++)
                 {
                     if (bits[b] > 0) { hasData = true; break; }
                 }
@@ -213,7 +217,7 @@ void SlicePropagation::propagateRange(int from, int to, int step,
                     res.success     = true;
                     res.confidence  = 1.0;
                     res.needsReview = false;
-                    results_.push_back(res);
+                    results.push_back(res);
                     current += step;
                     doneCount++;
                     emit progressUpdated(
@@ -229,22 +233,22 @@ void SlicePropagation::propagateRange(int from, int to, int step,
         gc.setTrimap(tm);
         gc.setState(state);              // warm-start from prev slice
 
-        gc.run(params_.iterations);
+        gc.run(params.iterations);
 
         // ── 6. Confidence ─────────────────────────────────────────────────────
         double conf = estimateConfidence(gc, tm);
         res.confidence  = conf;
-        res.needsReview = conf < params_.confidenceThreshold;
+        res.needsReview = conf < params.confidenceThreshold;
 
         // ── 7. Write to GA[] ──────────────────────────────────────────────────
-        QByteArray gaData = gc.alphaAsGAImage(fwidth4_);
+        QByteArray gaData = gc.alphaAsGAImage(fwidth4);
         writeResultToGA(current, gaData);
         res.success = true;
 
         // ── 8. Update state for next slice ────────────────────────────────────
         state = gc.getState();
 
-        results_.push_back(res);
+        results.push_back(res);
 
         doneCount++;
         int pct = static_cast<int>(100.0 * doneCount / totalSlices);
@@ -258,12 +262,12 @@ void SlicePropagation::propagateRange(int from, int to, int step,
 
 std::vector<PropagationResult> SlicePropagation::propagate()
 {
-    results_.clear();
-    cancelFlag_ = false;
+    results.clear();
+    cancelFlag = false;
 
-    const int seed  = params_.seedSlice;
-    const int first = params_.firstSlice;
-    const int last  = params_.lastSlice;
+    const int seed  = params.seedSlice;
+    const int first = params.firstSlice;
+    const int last  = params.lastSlice;
 
     // Total slices to process (excluding the seed itself)
     int totalSlices = 0;
@@ -271,8 +275,8 @@ std::vector<PropagationResult> SlicePropagation::propagate()
     if (last  >= seed) totalSlices += last  - seed;       // slices after seed
     if (totalSlices == 0)
     {
-        emit propagationComplete(results_, false);
-        return results_;
+        emit propagationComplete(results, false);
+        return results;
     }
 
     int doneCount = 0;
@@ -282,29 +286,29 @@ std::vector<PropagationResult> SlicePropagation::propagate()
     // backward GMM drifts are independent.
 
     // ── Forward: seed+1 → last ────────────────────────────────────────────────
-    if (last > seed && !cancelFlag_)
+    if (last > seed && !cancelFlag)
     {
-        GrabCutState fwdState = seedState_;
+        GrabCutState fwdState = seedState;
         propagateRange(seed, last, +1, fwdState, totalSlices, doneCount);
     }
 
     // ── Backward: seed-1 → first ─────────────────────────────────────────────
-    if (first < seed && !cancelFlag_)
+    if (first < seed && !cancelFlag)
     {
-        GrabCutState bwdState = seedState_;
+        GrabCutState bwdState = seedState;
         propagateRange(seed, first, -1, bwdState, totalSlices, doneCount);
     }
 
-    bool wasCancelled = cancelFlag_;
-    emit propagationComplete(results_, wasCancelled);
-    return results_;
+    bool wasCancelled = cancelFlag;
+    emit propagationComplete(results, wasCancelled);
+    return results;
 }
 
 // ─── Result queries ───────────────────────────────────────────────────────────
 
 bool SlicePropagation::hasLowConfidenceSlices() const
 {
-    for (const PropagationResult &r : results_)
+    for (const PropagationResult &r : results)
         if (r.needsReview) return true;
     return false;
 }
@@ -312,7 +316,7 @@ bool SlicePropagation::hasLowConfidenceSlices() const
 std::vector<int> SlicePropagation::lowConfidenceSlices() const
 {
     std::vector<int> out;
-    for (const PropagationResult &r : results_)
+    for (const PropagationResult &r : results)
         if (r.needsReview) out.push_back(r.sliceIndex);
     return out;
 }

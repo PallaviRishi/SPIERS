@@ -5,7 +5,7 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #include "gmm.h"
@@ -144,10 +144,10 @@ void GMM::kMeansInit(const std::vector<double> &pixels, int N)
     // Set means from chosen seeds, identity covariance, equal weights
     for (int k = 0; k < K; k++)
     {
-        int idx = chosen[static_cast<size_t>(k)];
-        components[k].mean[0] = pixels[static_cast<size_t>(idx) * 3 + 0];
-        components[k].mean[1] = pixels[static_cast<size_t>(idx) * 3 + 1];
-        components[k].mean[2] = pixels[static_cast<size_t>(idx) * 3 + 2];
+        int seedIdx = chosen[static_cast<size_t>(k)];
+        components[k].mean[0] = pixels[static_cast<size_t>(seedIdx) * 3 + 0];
+        components[k].mean[1] = pixels[static_cast<size_t>(seedIdx) * 3 + 1];
+        components[k].mean[2] = pixels[static_cast<size_t>(seedIdx) * 3 + 2];
 
         for (int i = 0; i < 3; i++)
             for (int j = 0; j < 3; j++)
@@ -380,15 +380,15 @@ void GMM::serialise(std::vector<double> &out) const
 
 void GMM::deserialise(const std::vector<double> &in)
 {
-    size_t idx = 0;
+    size_t pos = 0;
     for (int k = 0; k < K; k++)
     {
         GMMComponent &c = components[k];
-        c.weight = in[idx++];
-        for (int i = 0; i < 3; i++) c.mean[i] = in[idx++];
+        c.weight = in[pos++];
+        for (int i = 0; i < 3; i++) c.mean[i] = in[pos++];
         for (int i = 0; i < 3; i++)
             for (int j = 0; j < 3; j++)
-                c.cov[i][j] = in[idx++];
+                c.cov[i][j] = in[pos++];
         computeInverseAndDet(c);
     }
 }

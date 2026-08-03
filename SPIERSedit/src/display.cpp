@@ -17,6 +17,7 @@
 
 #include "display.h"
 #include "globals.h"
+#include "grabcutglobals.h"
 #include "fileio.h"
 #include "mainwindowimpl.h"
 #include "histogram.h"
@@ -678,6 +679,53 @@ void MakeBlankGreyScale(int seg, int fnum, bool flag = false)
         }
 
     SaveGreyData(fnum, seg);
+}
+
+/**
+ * @brief Apply a cached GrabCut alpha result to GA[seg] for the given slice.
+ *
+ * Reads the pre-computed alpha data from grabCutAlphaCache (populated by the
+ * GrabCut dialog or inter-slice propagation) and writes it into GA[seg],
+ * respecting the mask-locking system. Pixels that are locked (via masks or
+ * the lock brush) are not overwritten.
+ *
+ * If no cached alpha exists for this segment/slice combination, the function
+ * does nothing — the existing GA[] data is preserved.
+ *
+ * @param seg   Segment index (0-based).
+ * @param fnum  File/slice index (0-based).
+ * @param flag  If true, skip LoadAllData/SaveGreyData (caller manages I/O).
+ */
+void MakeGrabCutGreyScale(int seg, int fnum, bool flag)
+{
+    QPair<int, int> key(seg, fnum);
+    if (!grabCutAlphaCache.contains(key))
+        return;
+
+    if (!flag) LoadAllData(fnum);
+
+    if (Segments[seg]->Locked) return;
+
+    uchar *data = GA[seg]->bits();
+    const QByteArray &alphaData = grabCutAlphaCache[key];
+
+    QByteArray newLocks = DoMaskLocking();
+
+    for (int h = 0; h < fheight; h++)
+    {
+        for (int w = 0; w < fwidth; w++)
+        {
+            int pos = fwidth * h + w;
+            if (!(newLocks[pos]))
+            {
+                int srcByte = h * fwidth4 + w;
+                if (srcByte < alphaData.size())
+                    *(data + (fwidth4 * h + w)) = static_cast<uchar>(alphaData.at(srcByte));
+            }
+        }
+    }
+
+    if (!flag) SaveGreyData(fnum, seg);
 }
 
 void MakeRangeGreyScale(int seg, int fnum, bool flag = false)

@@ -272,13 +272,6 @@ extern bool MasksDirty, LocksDirty, CurvesDirty; //for file writing
 extern bool MasksUndoDirty, LocksUndoDirty, CurvesUndoDirty; //for file writing
 extern bool HorribleBodgeFlagDontStoreUndo;
 
-// ── GrabCut per-segment/slice alpha storage ───────────────────────────────────
-// Keyed by (segmentIndex, sliceIndex). Populated by GrabCutDialogImpl on Accept
-// and consumed by MakeGrabCutGreyScale() in the generation pipeline.
-#include <QMap>
-#include <QPair>
-extern QMap<QPair<int,int>, QByteArray> GrabCutAlphaCache;
-
 // 'superglobals' - written to registry or equivalent
 extern bool BackgroundCacheFilling;
 extern bool RenderCache;

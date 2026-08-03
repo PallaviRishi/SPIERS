@@ -29,7 +29,7 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #ifndef GRABCUT_H
@@ -62,8 +62,8 @@ static constexpr uchar ALPHA_FG = 255;  ///< Foreground pixel in output GA[]
  */
 struct GrabCutState
 {
-    GMM fgGMM;  ///< Foreground Gaussian Mixture Model (K=5 components)
-    GMM bgGMM;  ///< Background Gaussian Mixture Model (K=5 components)
+    GMM fgGmm;  ///< Foreground Gaussian Mixture Model (K=5 components)
+    GMM bgGmm;  ///< Background Gaussian Mixture Model (K=5 components)
 
     /// Per-pixel GMM component assignment (0..K-1), size = width*height
     std::vector<int> componentMap;
@@ -128,7 +128,7 @@ public:
      * @brief Restore from a previously saved state (e.g. from adjacent slice).
      *        GMMs are reused; alpha is reinitialised from the new trimap.
      */
-    void setState(const GrabCutState &state);
+    void setState(const GrabCutState &savedState);
 
     /**
      * @brief Optional progress callback. Called with integer 0–100 during run().
@@ -158,11 +158,11 @@ public:
     // ── Output ────────────────────────────────────────────────────────────────
 
     /**
-     * @brief Return the current alpha mask as a flat byte array (size = W*H).
+     * @brief Return the current alpha mask as a flat byte array (size = width*height).
      *        Each byte is ALPHA_FG (255) or ALPHA_BG (0).
      *        Forced fg/bg trimap regions are always honoured.
      */
-    const std::vector<uchar> &alpha() const { return state_.alpha; }
+    const std::vector<uchar> &alpha() const { return state.alpha; }
 
     /**
      * @brief Return the alpha mask formatted as a QByteArray suitable for
@@ -176,13 +176,13 @@ public:
     /**
      * @brief Get the current full algorithm state for persistence/propagation.
      */
-    GrabCutState getState() const { return state_; }
+    GrabCutState getState() const { return state; }
 
     /**
      * @brief Image width and height (set after setImage()).
      */
-    int width()  const { return W; }
-    int height() const { return H; }
+    int width()  const { return imageWidth; }
+    int height() const { return imageHeight; }
 
     // ── Beta (smoothness) parameter ───────────────────────────────────────────
 
@@ -195,14 +195,14 @@ public:
 private:
     // Image data stored as flat double triples [R,G,B] normalised to 0–1
     std::vector<double> pixels;  // size = W*H*3
-    int W = 0;
-    int H = 0;
+    int imageHeight = 0;
+    int imageWidth = 0;
 
     // Trimap (one byte per pixel, flat row-major)
     std::vector<uchar> trimap;
 
     // Algorithm state
-    GrabCutState state_;
+    GrabCutState state;
 
     // Precomputed N-link weights (4-connected grid: right, down, right-down, right-up)
     // Stored as parallel arrays indexed by pixel i for neighbour direction d
@@ -242,7 +242,7 @@ private:
     void graphCut();
 
     /// Inline: pixel index (row-major)
-    int idx(int x, int y) const { return y * W + x; }
+    int pixelIndex(int x, int y) const { return y * imageWidth + x; }
 
     /// Get normalised RGB for pixel i
     void getPixel(int i, double &r, double &g, double &b) const

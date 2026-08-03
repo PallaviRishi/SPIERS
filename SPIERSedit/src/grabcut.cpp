@@ -5,7 +5,7 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  *
  * Implementation follows Rother, Kolmogorov & Blake (2004) closely:
  *
@@ -52,17 +52,17 @@ void GrabCut::setImage(const QImage &img)
         src = img.convertToFormat(QImage::Format_RGB32);
     }
 
-    W = src.width();
-    H = src.height();
-    int N = W * H;
+    imageWidth = src.width();
+    imageHeight = src.height();
+    int N = imageWidth * imageHeight;
     pixels.resize(static_cast<size_t>(N) * 3);
 
     const uchar *bits = src.bits();
-    for (int y = 0; y < H; y++)
+    for (int y = 0; y < imageHeight; y++)
     {
-        for (int x = 0; x < W; x++)
+        for (int x = 0; x < imageWidth; x++)
         {
-            int i = y * W + x;
+            int i = y * imageWidth + x;
             // QImage::Format_RGB32 layout (little-endian): B G R A
             int byteOffset = (y * src.bytesPerLine()) + x * 4;
             double b = static_cast<double>(bits[byteOffset + 0]) / 255.0;
@@ -81,23 +81,23 @@ void GrabCut::setImage(const QImage &img)
 
 void GrabCut::setTrimap(const QByteArray &tm)
 {
-    trimap.resize(static_cast<size_t>(W * H));
-    for (int i = 0; i < W * H; i++)
+    trimap.resize(static_cast<size_t>(imageWidth * imageHeight));
+    for (int i = 0; i < imageWidth * imageHeight; i++)
         trimap[static_cast<size_t>(i)] = static_cast<uchar>(tm.at(i));
 }
 
-void GrabCut::setState(const GrabCutState &s)
+void GrabCut::setState(const GrabCutState &savedState)
 {
-    state_ = s;
+    state = savedState;
     // Re-honour the trimap: forced regions override the propagated alpha
-    for (int i = 0; i < W * H; i++)
+    for (int i = 0; i < imageWidth * imageHeight; i++)
     {
         if (trimap[static_cast<size_t>(i)] == TRIMAP_FOREGROUND)
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_FG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_FG;
         else if (trimap[static_cast<size_t>(i)] == TRIMAP_BACKGROUND)
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_BG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_BG;
     }
-    state_.isInitialised = true;
+    state.isInitialised = true;
 }
 
 // ─── Beta and N-link precomputation ──────────────────────────────────────────
@@ -108,29 +108,39 @@ void GrabCut::computeBeta()
     double sumDist = 0.0;
     int    count   = 0;
 
-    for (int y = 0; y < H; y++)
+    for (int y = 0; y < imageHeight; y++)
     {
-        for (int x = 0; x < W; x++)
+        for (int x = 0; x < imageWidth; x++)
         {
-            int i = idx(x, y);
-            double r1, g1, b1;
+            int i = pixelIndex(x, y);
+            double r1;
+            double g1;
+            double b1;
             getPixel(i, r1, g1, b1);
 
             // Right neighbour
-            if (x + 1 < W)
+            if (x + 1 < imageWidth)
             {
-                double r2, g2, b2;
-                getPixel(idx(x + 1, y), r2, g2, b2);
-                double dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+                double r2;
+                double g2;
+                double b2;
+                getPixel(pixelIndex(x + 1, y), r2, g2, b2);
+                double dr = r1 - r2;
+                double dg = g1 - g2;
+                double db = b1 - b2;
                 sumDist += dr * dr + dg * dg + db * db;
                 count++;
             }
             // Down neighbour
-            if (y + 1 < H)
+            if (y + 1 < imageHeight)
             {
-                double r2, g2, b2;
-                getPixel(idx(x, y + 1), r2, g2, b2);
-                double dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+                double r2;
+                double g2;
+                double b2;
+                getPixel(pixelIndex(x, y + 1), r2, g2, b2);
+                double dr = r1 - r2;
+                double dg = g1 - g2;
+                double db = b1 - b2;
                 sumDist += dr * dr + dg * dg + db * db;
                 count++;
             }
@@ -146,15 +156,23 @@ void GrabCut::computeBeta()
 double GrabCut::nLinkWeight(int x1, int y1, int x2, int y2) const
 {
     // Weight = gamma * exp(-beta * ||z1 - z2||^2) / dist(p1, p2)
-    double r1, g1, b1, r2, g2, b2;
-    getPixel(idx(x1, y1), r1, g1, b1);
-    getPixel(idx(x2, y2), r2, g2, b2);
+    double r1;
+    double g1;
+    double b1;
+    double r2;
+    double g2;
+    double b2;
+    getPixel(pixelIndex(x1, y1), r1, g1, b1);
+    getPixel(pixelIndex(x2, y2), r2, g2, b2);
 
-    double dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+    double dr = r1 - r2;
+    double dg = g1 - g2;
+    double db = b1 - b2;
     double dist2 = dr * dr + dg * dg + db * db;
 
     // Geometric distance between pixel centres
-    int dx = x2 - x1, dy = y2 - y1;
+    int dx = x2 - x1;
+    int dy = y2 - y1;
     double geoDist = std::sqrt(static_cast<double>(dx * dx + dy * dy));
 
     return (gamma / geoDist) * std::exp(-beta * dist2);
@@ -162,24 +180,24 @@ double GrabCut::nLinkWeight(int x1, int y1, int x2, int y2) const
 
 void GrabCut::computeNLinks()
 {
-    int N = W * H;
+    int N = imageWidth * imageHeight;
     nlinks.right.assign(static_cast<size_t>(N), 0.0);
     nlinks.down.assign(static_cast<size_t>(N),  0.0);
     nlinks.diagDR.assign(static_cast<size_t>(N), 0.0);
     nlinks.diagUR.assign(static_cast<size_t>(N), 0.0);
 
-    for (int y = 0; y < H; y++)
+    for (int y = 0; y < imageHeight; y++)
     {
-        for (int x = 0; x < W; x++)
+        for (int x = 0; x < imageWidth; x++)
         {
-            int i = idx(x, y);
-            if (x + 1 < W)
+            int i = pixelIndex(x, y);
+            if (x + 1 < imageWidth)
                 nlinks.right[static_cast<size_t>(i)] = nLinkWeight(x, y, x + 1, y);
-            if (y + 1 < H)
+            if (y + 1 < imageHeight)
                 nlinks.down[static_cast<size_t>(i)] = nLinkWeight(x, y, x, y + 1);
-            if (x + 1 < W && y + 1 < H)
+            if (x + 1 < imageWidth && y + 1 < imageHeight)
                 nlinks.diagDR[static_cast<size_t>(i)] = nLinkWeight(x, y, x + 1, y + 1);
-            if (x + 1 < W && y - 1 >= 0)
+            if (x + 1 < imageWidth && y - 1 >= 0)
                 nlinks.diagUR[static_cast<size_t>(i)] = nLinkWeight(x, y, x + 1, y - 1);
         }
     }
@@ -189,18 +207,22 @@ void GrabCut::computeNLinks()
 
 double GrabCut::dataTermFG(int i) const
 {
-    double r, g, b;
+    double r;
+    double g;
+    double b;
     getPixel(i, r, g, b);
-    double p = state_.fgGMM.probability(r, g, b);
+    double p = state.fgGmm.probability(r, g, b);
     if (p < LOG_CLAMP) p = LOG_CLAMP;
     return -std::log(p);
 }
 
 double GrabCut::dataTermBG(int i) const
 {
-    double r, g, b;
+    double r;
+    double g;
+    double b;
     getPixel(i, r, g, b);
-    double p = state_.bgGMM.probability(r, g, b);
+    double p = state.bgGmm.probability(r, g, b);
     if (p < LOG_CLAMP) p = LOG_CLAMP;
     return -std::log(p);
 }
@@ -209,19 +231,19 @@ double GrabCut::dataTermBG(int i) const
 
 void GrabCut::initAlphaFromTrimap()
 {
-    int N = W * H;
-    state_.alpha.resize(static_cast<size_t>(N));
-    state_.componentMap.resize(static_cast<size_t>(N), 0);
+    int N = imageWidth * imageHeight;
+    state.alpha.resize(static_cast<size_t>(N));
+    state.componentMap.resize(static_cast<size_t>(N), 0);
 
     for (int i = 0; i < N; i++)
     {
         uchar t = trimap[static_cast<size_t>(i)];
         if (t == TRIMAP_FOREGROUND)
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_FG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_FG;
         else
             // Unknown and background both start as background.
             // The graph cut will update UNKNOWN pixels.
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_BG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_BG;
     }
 }
 
@@ -229,7 +251,7 @@ void GrabCut::initialise()
 {
     initAlphaFromTrimap();
 
-    int N = W * H;
+    int N = imageWidth * imageHeight;
 
     // Collect FG and BG pixels from trimap
     std::vector<double> fgPixels, bgPixels;
@@ -238,7 +260,9 @@ void GrabCut::initialise()
 
     for (int i = 0; i < N; i++)
     {
-        double r, g, b;
+        double r;
+        double g;
+        double b;
         getPixel(i, r, g, b);
         uchar t = trimap[static_cast<size_t>(i)];
         if (t == TRIMAP_FOREGROUND)
@@ -259,10 +283,10 @@ void GrabCut::initialise()
     int nFG = static_cast<int>(fgPixels.size()) / 3;
     int nBG = static_cast<int>(bgPixels.size()) / 3;
 
-    if (nFG > 0) state_.fgGMM.initFromSamples(fgPixels, nFG);
-    if (nBG > 0) state_.bgGMM.initFromSamples(bgPixels, nBG);
+    if (nFG > 0) state.fgGmm.initFromSamples(fgPixels, nFG);
+    if (nBG > 0) state.bgGmm.initFromSamples(bgPixels, nBG);
 
-    state_.isInitialised = true;
+    state.isInitialised = true;
 }
 
 // ─── Algorithm steps ──────────────────────────────────────────────────────────
@@ -273,18 +297,20 @@ void GrabCut::initialise()
  */
 void GrabCut::assignGMMComponents()
 {
-    int N = W * H;
+    int N = imageWidth * imageHeight;
     for (int i = 0; i < N; i++)
     {
-        double r, g, b;
+        double r;
+        double g;
+        double b;
         getPixel(i, r, g, b);
 
-        if (state_.alpha[static_cast<size_t>(i)] == ALPHA_FG)
-            state_.componentMap[static_cast<size_t>(i)] =
-                state_.fgGMM.mostLikelyComponent(r, g, b);
+        if (state.alpha[static_cast<size_t>(i)] == ALPHA_FG)
+            state.componentMap[static_cast<size_t>(i)] =
+                state.fgGmm.mostLikelyComponent(r, g, b);
         else
-            state_.componentMap[static_cast<size_t>(i)] =
-                state_.bgGMM.mostLikelyComponent(r, g, b);
+            state.componentMap[static_cast<size_t>(i)] =
+                state.bgGmm.mostLikelyComponent(r, g, b);
     }
 }
 
@@ -293,25 +319,27 @@ void GrabCut::assignGMMComponents()
  */
 void GrabCut::refitGMMs()
 {
-    int N = W * H;
+    int N = imageWidth * imageHeight;
 
-    state_.fgGMM.resetAccumulators();
-    state_.bgGMM.resetAccumulators();
+    state.fgGmm.resetAccumulators();
+    state.bgGmm.resetAccumulators();
 
     for (int i = 0; i < N; i++)
     {
-        double r, g, b;
+        double r;
+        double g;
+        double b;
         getPixel(i, r, g, b);
-        int comp = state_.componentMap[static_cast<size_t>(i)];
+        int comp = state.componentMap[static_cast<size_t>(i)];
 
-        if (state_.alpha[static_cast<size_t>(i)] == ALPHA_FG)
-            state_.fgGMM.addSample(comp, r, g, b);
+        if (state.alpha[static_cast<size_t>(i)] == ALPHA_FG)
+            state.fgGmm.addSample(comp, r, g, b);
         else
-            state_.bgGMM.addSample(comp, r, g, b);
+            state.bgGmm.addSample(comp, r, g, b);
     }
 
-    state_.fgGMM.learnFromAccumulated();
-    state_.bgGMM.learnFromAccumulated();
+    state.fgGmm.learnFromAccumulated();
+    state.bgGmm.learnFromAccumulated();
 }
 
 /**
@@ -341,7 +369,7 @@ void GrabCut::refitGMMs()
  */
 void GrabCut::graphCut()
 {
-    int N = W * H;
+    int N = imageWidth * imageHeight;
     MaxFlowGraph graph(N);
 
     // Largest observed data term (used for INF-equivalent forced terminal caps)
@@ -370,37 +398,37 @@ void GrabCut::graphCut()
     }
 
     // ── N-links (8-connected) ─────────────────────────────────────────────────
-    for (int y = 0; y < H; y++)
+    for (int y = 0; y < imageHeight; y++)
     {
-        for (int x = 0; x < W; x++)
+        for (int x = 0; x < imageWidth; x++)
         {
-            int i = idx(x, y);
+            int i = pixelIndex(x, y);
 
             // Right (horizontal)
-            if (x + 1 < W)
+            if (x + 1 < imageWidth)
             {
-                int j = idx(x + 1, y);
+                int j = pixelIndex(x + 1, y);
                 double w = nlinks.right[static_cast<size_t>(i)];
                 graph.addNLink(i, j, w);
             }
             // Down (vertical)
-            if (y + 1 < H)
+            if (y + 1 < imageHeight)
             {
-                int j = idx(x, y + 1);
+                int j = pixelIndex(x, y + 1);
                 double w = nlinks.down[static_cast<size_t>(i)];
                 graph.addNLink(i, j, w);
             }
             // Diagonal down-right
-            if (x + 1 < W && y + 1 < H)
+            if (x + 1 < imageWidth && y + 1 < imageHeight)
             {
-                int j = idx(x + 1, y + 1);
+                int j = pixelIndex(x + 1, y + 1);
                 double w = nlinks.diagDR[static_cast<size_t>(i)];
                 graph.addNLink(i, j, w);
             }
             // Diagonal up-right (= down-left of the pixel above)
-            if (x + 1 < W && y - 1 >= 0)
+            if (x + 1 < imageWidth && y - 1 >= 0)
             {
-                int j = idx(x + 1, y - 1);
+                int j = pixelIndex(x + 1, y - 1);
                 double w = nlinks.diagUR[static_cast<size_t>(i)];
                 graph.addNLink(i, j, w);
             }
@@ -417,16 +445,16 @@ void GrabCut::graphCut()
         uchar t = trimap[static_cast<size_t>(i)];
         if (t == TRIMAP_FOREGROUND)
         {
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_FG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_FG;
         }
         else if (t == TRIMAP_BACKGROUND)
         {
-            state_.alpha[static_cast<size_t>(i)] = ALPHA_BG;
+            state.alpha[static_cast<size_t>(i)] = ALPHA_BG;
         }
         else
         {
             // Source side = foreground (S is the fg terminal)
-            state_.alpha[static_cast<size_t>(i)] =
+            state.alpha[static_cast<size_t>(i)] =
                 graph.inSourceSet(i) ? ALPHA_FG : ALPHA_BG;
         }
     }
@@ -436,7 +464,7 @@ void GrabCut::graphCut()
 
 void GrabCut::runOneIteration()
 {
-    if (!state_.isInitialised)
+    if (!state.isInitialised)
         initialise();
 
     assignGMMComponents();
@@ -446,7 +474,7 @@ void GrabCut::runOneIteration()
 
 void GrabCut::run(int iterations)
 {
-    if (!state_.isInitialised)
+    if (!state.isInitialised)
         initialise();
 
     for (int iter = 0; iter < iterations; iter++)
@@ -478,15 +506,15 @@ QByteArray GrabCut::alphaAsGAImage(int fwidth4) const
     // downward and does its own vertical flip when compositing. We write top-down
     // here to match the ColArray orientation.
 
-    QByteArray ga(fwidth4 * H, static_cast<char>(0));
+    QByteArray ga(fwidth4 * imageHeight, static_cast<char>(0));
 
-    for (int y = 0; y < H; y++)
+    for (int y = 0; y < imageHeight; y++)
     {
-        for (int x = 0; x < W; x++)
+        for (int x = 0; x < imageWidth; x++)
         {
-            int srcIdx  = y * W + x;
+            int srcIdx  = y * imageWidth + x;
             int dstByte = y * fwidth4 + x;
-            ga[dstByte] = static_cast<char>(state_.alpha[static_cast<size_t>(srcIdx)]);
+            ga[dstByte] = static_cast<char>(state.alpha[static_cast<size_t>(srcIdx)]);
         }
     }
 

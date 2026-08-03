@@ -5,12 +5,13 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #include "grabcutdialogimpl.h"
-#include "fileio.h"
 #include "display.h"
+#include "fileio.h"
+#include "grabcutglobals.h"
 
 #include <QPainter>
 #include <QMessageBox>
@@ -34,62 +35,62 @@ GrabCutCanvas::GrabCutCanvas(QWidget *parent)
 
 void GrabCutCanvas::setSourceImage(const QImage &img)
 {
-    sourceImage_ = img.convertToFormat(QImage::Format_RGB32);
-    imgW_ = sourceImage_.width();
-    imgH_ = sourceImage_.height();
-    displayDirty_ = true;
+    sourceImage = img.convertToFormat(QImage::Format_RGB32);
+    imgW_ = sourceImage.width();
+    imgH_ = sourceImage.height();
+    displayDirty = true;
 }
 
 void GrabCutCanvas::setTrimap(const QByteArray &tm, int w, int h)
 {
-    trimap_ = tm;
+    trimapData = tm;
     imgW_   = w;
     imgH_   = h;
-    displayDirty_ = true;
+    displayDirty = true;
 }
 
 void GrabCutCanvas::setAlpha(const std::vector<uchar> &alpha)
 {
-    alpha_ = alpha;
-    displayDirty_ = true;
+    alphaResult = alpha;
+    displayDirty = true;
 }
 
 void GrabCutCanvas::setShowScribbles(bool show)
 {
-    showScribbles_ = show;
-    displayDirty_  = true;
+    showScribbles = show;
+    displayDirty  = true;
     update();
 }
 
 void GrabCutCanvas::setShowAlpha(bool show)
 {
-    showAlpha_    = show;
-    displayDirty_ = true;
+    showAlpha    = show;
+    displayDirty = true;
     update();
 }
 
 void GrabCutCanvas::setAlphaOpacity(int opacity)
 {
-    alphaOpacity_ = opacity;
-    displayDirty_ = true;
+    alphaOpacity = opacity;
+    displayDirty = true;
     update();
 }
 
 void GrabCutCanvas::setBrushSize(int radius)
 {
-    brushRadius_ = radius;
+    brushRadius = radius;
 }
 
 void GrabCutCanvas::clearScribbles()
 {
-    trimap_.fill(static_cast<char>(TRIMAP_UNKNOWN));
-    displayDirty_ = true;
+    trimapData.fill(static_cast<char>(TRIMAP_UNKNOWN));
+    displayDirty = true;
     update();
 }
 
 void GrabCutCanvas::refresh()
 {
-    displayDirty_ = true;
+    displayDirty = true;
     update();
 }
 
@@ -124,9 +125,9 @@ QPoint GrabCutCanvas::widgetToImage(const QPoint &pt) const
 
 void GrabCutCanvas::paintCircle(int cx, int cy, uchar value)
 {
-    if (trimap_.isEmpty() || imgW_ == 0) return;
+    if (trimapData.isEmpty() || imgW_ == 0) return;
 
-    int r = brushRadius_;
+    int r = brushRadius;
     for (int dy = -r; dy <= r; dy++)
     {
         for (int dx = -r; dx <= r; dx++)
@@ -136,47 +137,47 @@ void GrabCutCanvas::paintCircle(int cx, int cy, uchar value)
                 int px = cx + dx;
                 int py = cy + dy;
                 if (px >= 0 && px < imgW_ && py >= 0 && py < imgH_)
-                    trimap_[py * imgW_ + px] = static_cast<char>(value);
+                    trimapData[py * imgW_ + px] = static_cast<char>(value);
             }
         }
     }
-    displayDirty_ = true;
+    displayDirty = true;
 }
 
 // ─── Mouse events ─────────────────────────────────────────────────────────────
 
 void GrabCutCanvas::mousePressEvent(QMouseEvent *event)
 {
-    painting_ = true;
+    painting = true;
 
     bool ctrl = event->modifiers() & Qt::ControlModifier;
     if (event->button() == Qt::LeftButton && !ctrl)
-        paintValue_ = TRIMAP_FOREGROUND;
+        paintValue = TRIMAP_FOREGROUND;
     else if (event->button() == Qt::RightButton)
-        paintValue_ = TRIMAP_BACKGROUND;
+        paintValue = TRIMAP_BACKGROUND;
     else // middle button or ctrl+left = erase
-        paintValue_ = TRIMAP_UNKNOWN;
+        paintValue = TRIMAP_UNKNOWN;
 
     QPoint ip = widgetToImage(event->pos());
-    paintCircle(ip.x(), ip.y(), paintValue_);
+    paintCircle(ip.x(), ip.y(), paintValue);
     update();
 }
 
 void GrabCutCanvas::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!painting_) return;
+    if (!painting) return;
 
     QPoint ip = widgetToImage(event->pos());
-    paintCircle(ip.x(), ip.y(), paintValue_);
+    paintCircle(ip.x(), ip.y(), paintValue);
     update();
 }
 
 void GrabCutCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
     Q_UNUSED(event);
-    if (painting_)
+    if (painting)
     {
-        painting_ = false;
+        painting = false;
         emit scribbleCompleted();
     }
 }
@@ -184,14 +185,14 @@ void GrabCutCanvas::mouseReleaseEvent(QMouseEvent *event)
 void GrabCutCanvas::resizeEvent(QResizeEvent *event)
 {
     Q_UNUSED(event);
-    displayDirty_ = true;
+    displayDirty = true;
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
 
 void GrabCutCanvas::rebuildDisplayCache()
 {
-    if (sourceImage_.isNull()) return;
+    if (sourceImage.isNull()) return;
 
     int ww = width();
     int wh = height();
@@ -207,27 +208,27 @@ void GrabCutCanvas::rebuildDisplayCache()
     int offY  = (wh - dispH) / 2;
 
     // Start with the scaled source image
-    displayCache_ = QImage(ww, wh, QImage::Format_RGB32);
-    displayCache_.fill(Qt::black);
+    displayCache = QImage(ww, wh, QImage::Format_RGB32);
+    displayCache.fill(Qt::black);
 
-    QImage scaled = sourceImage_.scaled(dispW, dispH,
+    QImage scaled = sourceImage.scaled(dispW, dispH,
                                         Qt::IgnoreAspectRatio,
                                         Qt::SmoothTransformation);
-    QPainter p(&displayCache_);
+    QPainter p(&displayCache);
     p.drawImage(offX, offY, scaled);
 
     // ── Alpha overlay ─────────────────────────────────────────────────────────
-    if (showAlpha_ && !alpha_.empty() && alphaOpacity_ > 0)
+    if (showAlpha && !alphaResult.empty() && alphaOpacity > 0)
     {
         // Build a small RGBA overlay image in image coords, then scale
         QImage alphaOverlay(imgW_, imgH_, QImage::Format_ARGB32);
-        int    alpha8 = static_cast<int>(255.0 * alphaOpacity_ / 100.0);
+        int    alpha8 = static_cast<int>(255.0 * alphaOpacity / 100.0);
 
         for (int y = 0; y < imgH_; y++)
         {
             for (int x = 0; x < imgW_; x++)
             {
-                uchar a = alpha_[static_cast<size_t>(y * imgW_ + x)];
+                uchar a = alphaResult[static_cast<size_t>(y * imgW_ + x)];
                 if (a == ALPHA_FG)
                     alphaOverlay.setPixel(x, y, qRgba(0, 200, 0, alpha8));
                 else
@@ -241,7 +242,7 @@ void GrabCutCanvas::rebuildDisplayCache()
     }
 
     // ── Scribble overlay ──────────────────────────────────────────────────────
-    if (showScribbles_ && !trimap_.isEmpty())
+    if (showScribbles && !trimapData.isEmpty())
     {
         QImage scribbleOverlay(imgW_, imgH_, QImage::Format_ARGB32);
         scribbleOverlay.fill(Qt::transparent);
@@ -250,7 +251,7 @@ void GrabCutCanvas::rebuildDisplayCache()
         {
             for (int x = 0; x < imgW_; x++)
             {
-                uchar t = static_cast<uchar>(trimap_.at(y * imgW_ + x));
+                uchar t = static_cast<uchar>(trimapData.at(y * imgW_ + x));
                 if (t == TRIMAP_FOREGROUND)
                     scribbleOverlay.setPixel(x, y, qRgba(0, 255, 0, 200));
                 else if (t == TRIMAP_BACKGROUND)
@@ -264,17 +265,17 @@ void GrabCutCanvas::rebuildDisplayCache()
     }
 
     p.end();
-    displayDirty_ = false;
+    displayDirty = false;
 }
 
 void GrabCutCanvas::paintEvent(QPaintEvent *event)
 {
     Q_UNUSED(event);
-    if (displayDirty_) rebuildDisplayCache();
-    if (displayCache_.isNull()) return;
+    if (displayDirty) rebuildDisplayCache();
+    if (displayCache.isNull()) return;
 
     QPainter p(this);
-    p.drawImage(0, 0, displayCache_);
+    p.drawImage(0, 0, displayCache);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -285,7 +286,7 @@ GrabCutDialogImpl::GrabCutDialogImpl(int segmentIndex,
                                      QWidget *parent,
                                      Qt::WindowFlags f)
     : QDialog(parent, f)
-    , segmentIndex_(segmentIndex)
+    , segmentIndex(segmentIndex)
 {
     setupUi(this);
     setWindowIcon(QIcon(":/icons/ProgramIcon.bmp"));
@@ -295,7 +296,7 @@ GrabCutDialogImpl::GrabCutDialogImpl(int segmentIndex,
             this,   &GrabCutDialogImpl::onScribbleCompleted);
 
     // Initialise trimaps_ to hold one entry per slice
-    sliceTrimaps_.resize(static_cast<size_t>(FileCount));
+    sliceTrimaps.resize(static_cast<size_t>(FileCount));
 
     // Set propagation range defaults to current slice
     PropFromSpinBox->setMaximum(FileCount - 1);
@@ -305,9 +306,9 @@ GrabCutDialogImpl::GrabCutDialogImpl(int segmentIndex,
 
     // Update labels
     SliceLabel->setText(QString("Slice: %1").arg(CurrentFile + 1));
-    if (segmentIndex_ >= 0 && segmentIndex_ < SegmentCount)
+    if (segmentIndex >= 0 && segmentIndex < SegmentCount)
         SegmentLabel->setText(QString("Segment: %1")
-                              .arg(Segments[segmentIndex_]->Name));
+                              .arg(Segments[segmentIndex]->Name));
 
     initialiseFromCurrentSlice();
 }
@@ -315,14 +316,14 @@ GrabCutDialogImpl::GrabCutDialogImpl(int segmentIndex,
 GrabCutDialogImpl::~GrabCutDialogImpl()
 {
     // Stop propagation thread if running
-    if (propThread_ && propThread_->isRunning())
+    if (propThread && propThread->isRunning())
     {
-        if (propagation_) propagation_->cancel();
-        propThread_->quit();
-        propThread_->wait(3000);
+        if (propagation) propagation->cancel();
+        propThread->quit();
+        propThread->wait(3000);
     }
-    delete propThread_;
-    // propagation_ is owned by propThread_ (moveToThread), deleted with it
+    delete propThread;
+    // propagation is owned by propThread (moveToThread), deleted with it
 }
 
 // ─── Initialisation ───────────────────────────────────────────────────────────
@@ -337,31 +338,31 @@ void GrabCutDialogImpl::initialiseFromCurrentSlice()
         return;
     }
 
-    int W = colImg.width();
-    int H = colImg.height();
+    int imgWidth = colImg.width();
+    int imgHeight = colImg.height();
 
     // Restore or create trimap for this slice
-    QByteArray &tm = sliceTrimaps_[static_cast<size_t>(CurrentFile)];
+    QByteArray &tm = sliceTrimaps[static_cast<size_t>(CurrentFile)];
     if (tm.isEmpty())
-        tm = QByteArray(W * H, static_cast<char>(TRIMAP_UNKNOWN));
+        tm = QByteArray(imgWidth * imgHeight, static_cast<char>(TRIMAP_UNKNOWN));
 
     // Set up canvas
     Canvas->setSourceImage(colImg);
-    Canvas->setTrimap(tm, W, H);
+    Canvas->setTrimap(tm, imgWidth, imgHeight);
     Canvas->setBrushSize(BrushSizeSpinBox->value());
     Canvas->setShowScribbles(ShowScribblesCheckBox->isChecked());
     Canvas->setShowAlpha(ShowAlphaCheckBox->isChecked());
     Canvas->setAlphaOpacity(AlphaOpacitySlider->value());
 
     // Set up GrabCut engine
-    grabCut_.setImage(colImg);
-    grabCut_.setTrimap(tm);
-    grabCut_.gamma = GammaSpinBox->value();
+    grabCut.setImage(colImg);
+    grabCut.setTrimap(tm);
+    grabCut.gamma = GammaSpinBox->value();
 
     // If we have a previously saved state for this slice, restore the alpha
-    if (stateValid_)
+    if (stateValid)
     {
-        Canvas->setAlpha(currentState_.alpha);
+        Canvas->setAlpha(currentState.alpha);
     }
 
     Canvas->refresh();
@@ -374,7 +375,7 @@ void GrabCutDialogImpl::runGrabCut(int iterations)
 {
     saveCurrentTrimap();
 
-    QByteArray &tm = sliceTrimaps_[static_cast<size_t>(CurrentFile)];
+    QByteArray &tm = sliceTrimaps[static_cast<size_t>(CurrentFile)];
 
     // Check there's at least one fg and one bg scribble
     bool hasFG = false, hasBG = false;
@@ -399,33 +400,33 @@ void GrabCutDialogImpl::runGrabCut(int iterations)
     QApplication::processEvents();
 
     // Set up fresh engine state
-    grabCut_.setTrimap(tm);
-    grabCut_.gamma = GammaSpinBox->value();
+    grabCut.setTrimap(tm);
+    grabCut.gamma = GammaSpinBox->value();
 
-    grabCut_.setProgressCallback([this](int pct)
+    grabCut.setProgressCallback([this](int pct)
     {
         ProgressBar->setValue(pct);
         QApplication::processEvents();
     });
 
-    if (stateValid_)
-        grabCut_.setState(currentState_);
+    if (stateValid)
+        grabCut.setState(currentState);
     else
-        grabCut_.initialise();  // seed from trimap scribbles
+        grabCut.initialise();  // seed from trimap scribbles
 
-    grabCut_.run(iterations);
+    grabCut.run(iterations);
 
-    currentState_ = grabCut_.getState();
-    stateValid_   = true;
+    currentState = grabCut.getState();
+    stateValid   = true;
 
     // Update canvas overlay
-    Canvas->setAlpha(grabCut_.alpha());
+    Canvas->setAlpha(grabCut.alpha());
     Canvas->refresh();
 
     ProgressBar->setValue(100);
     StatusLabel->setText(QString("Done. FG pixels: %1")
-                         .arg(std::count(grabCut_.alpha().begin(),
-                                         grabCut_.alpha().end(), ALPHA_FG)));
+                         .arg(std::count(grabCut.alpha().begin(),
+                                         grabCut.alpha().end(), ALPHA_FG)));
 
     QApplication::restoreOverrideCursor();
 }
@@ -434,7 +435,7 @@ void GrabCutDialogImpl::runGrabCut(int iterations)
 
 void GrabCutDialogImpl::on_RunButton_clicked()
 {
-    stateValid_ = false;  // Force re-initialisation from current scribbles
+    stateValid = false;  // Force re-initialisation from current scribbles
     runGrabCut(IterationsSpinBox->value());
 }
 
@@ -446,10 +447,10 @@ void GrabCutDialogImpl::on_RefineButton_clicked()
 void GrabCutDialogImpl::on_ClearScribblesButton_clicked()
 {
     Canvas->clearScribbles();
-    sliceTrimaps_[static_cast<size_t>(CurrentFile)] =
-        QByteArray(grabCut_.width() * grabCut_.height(),
+    sliceTrimaps[static_cast<size_t>(CurrentFile)] =
+        QByteArray(grabCut.width() * grabCut.height(),
                    static_cast<char>(TRIMAP_UNKNOWN));
-    stateValid_ = false;
+    stateValid = false;
     Canvas->setAlpha({});
     Canvas->refresh();
     StatusLabel->setText("Scribbles cleared.");
@@ -487,20 +488,20 @@ void GrabCutDialogImpl::on_AlphaOpacitySlider_valueChanged(int v)
 
 void GrabCutDialogImpl::on_buttonBox_accepted()
 {
-    if (!stateValid_)
+    if (!stateValid)
     {
         QMessageBox::warning(this, "No result",
                              "Run GrabCut at least once before accepting.");
         return;
     }
     commitResultToGA();
-    accepted_ = true;
+    wasAccepted = true;
     accept();
 }
 
 void GrabCutDialogImpl::on_buttonBox_rejected()
 {
-    accepted_ = false;
+    wasAccepted = false;
     reject();
 }
 
@@ -508,24 +509,27 @@ void GrabCutDialogImpl::on_buttonBox_rejected()
 
 void GrabCutDialogImpl::commitResultToGA()
 {
-    if (segmentIndex_ < 0 || segmentIndex_ >= SegmentCount) return;
-    if (!stateValid_) return;
+    if (segmentIndex < 0 || segmentIndex >= SegmentCount) return;
+    if (!stateValid) return;
 
     // Load GA image for this segment / slice
     LoadAllData(CurrentFile);
 
-    QImage *gaImage = GA.at(segmentIndex_);
+    QImage *gaImage = GA.at(segmentIndex);
     if (!gaImage || gaImage->isNull()) return;
 
-    QByteArray gaData = grabCut_.alphaAsGAImage(fwidth4);
+    QByteArray gaData = grabCut.alphaAsGAImage(fwidth4);
     uchar *bits = gaImage->bits();
     for (int b = 0; b < gaData.size(); b++)
         bits[b] = static_cast<uchar>(gaData.at(b));
 
-    // Save to disk
-    SaveGreyData(CurrentFile, segmentIndex_);
+    // Store in the alpha cache so MakeGrabCutGreyScale() can re-apply it
+    grabCutAlphaCache[QPair<int, int>(segmentIndex, CurrentFile)] = gaData;
 
-    Segments[segmentIndex_]->Dirty   = true;
+    // Save to disk
+    SaveGreyData(CurrentFile, segmentIndex);
+
+    Segments[segmentIndex]->Dirty   = true;
     if (CurrentFile < FilesDirty.size())
         FilesDirty[CurrentFile] = true;
 }
@@ -534,7 +538,7 @@ void GrabCutDialogImpl::commitResultToGA()
 
 void GrabCutDialogImpl::on_PropagateButton_clicked()
 {
-    if (!stateValid_)
+    if (!stateValid)
     {
         QMessageBox::warning(this, "No seed",
                              "Run GrabCut on this slice first to create a seed segmentation.");
@@ -562,40 +566,40 @@ void GrabCutDialogImpl::on_PropagateButton_clicked()
     params.seedSlice         = CurrentFile;
     params.firstSlice        = fromSlice;
     params.lastSlice         = toSlice;
-    params.segmentIndex      = segmentIndex_;
+    params.segmentIndex      = segmentIndex;
     params.iterations        = PropIterationsSpinBox->value();
     params.overwriteExisting = PropOverwriteCheckBox->isChecked();
     params.confidenceThreshold = 0.95;
 
     // Create propagation object and move to thread
-    propagation_ = new SlicePropagation();
-    propagation_->setSeedState(currentState_);
-    propagation_->setTrimaps(sliceTrimaps_);
-    propagation_->setFileList(Files);
-    propagation_->setImageDimensions(grabCut_.width(), grabCut_.height(), fwidth4);
-    propagation_->setParams(params);
+    propagation = new SlicePropagation();
+    propagation->setSeedState(currentState);
+    propagation->setTrimaps(sliceTrimaps);
+    propagation->setFileList(Files);
+    propagation->setImageDimensions(grabCut.width(), grabCut.height(), fwidth4);
+    propagation->setParams(params);
 
-    propThread_ = new QThread(this);
-    propagation_->moveToThread(propThread_);
+    propThread = new QThread(this);
+    propagation->moveToThread(propThread);
 
-    connect(propThread_,   &QThread::started,
-            propagation_,  [this]() { propagation_->propagate(); });
-    connect(propagation_,  &SlicePropagation::progressUpdated,
+    connect(propThread,   &QThread::started,
+            propagation,  [this]() { propagation->propagate(); });
+    connect(propagation,  &SlicePropagation::progressUpdated,
             this,          &GrabCutDialogImpl::onPropagationProgress,
             Qt::QueuedConnection);
-    connect(propagation_,  &SlicePropagation::propagationComplete,
+    connect(propagation,  &SlicePropagation::propagationComplete,
             this,          &GrabCutDialogImpl::onPropagationComplete,
             Qt::QueuedConnection);
-    connect(propThread_,   &QThread::finished,
-            propagation_,  &QObject::deleteLater);
+    connect(propThread,   &QThread::finished,
+            propagation,  &QObject::deleteLater);
 
     setPropagationRunning(true);
-    propThread_->start();
+    propThread->start();
 }
 
 void GrabCutDialogImpl::on_CancelPropButton_clicked()
 {
-    if (propagation_) propagation_->cancel();
+    if (propagation) propagation->cancel();
     StatusLabel->setText("Cancelling...");
 }
 
@@ -609,11 +613,11 @@ void GrabCutDialogImpl::onPropagationProgress(int percent, int sliceIdx)
 void GrabCutDialogImpl::onPropagationComplete(std::vector<PropagationResult> results,
                                                bool cancelled)
 {
-    propThread_->quit();
-    propThread_->wait();
-    delete propThread_;
-    propThread_  = nullptr;
-    propagation_ = nullptr;  // already deleteLater'd
+    propThread->quit();
+    propThread->wait();
+    delete propThread;
+    propThread  = nullptr;
+    propagation = nullptr;  // already deleteLater'd
 
     setPropagationRunning(false);
     ProgressBar->setValue(cancelled ? ProgressBar->value() : 100);
@@ -659,5 +663,5 @@ void GrabCutDialogImpl::showPropagationSummary(const std::vector<PropagationResu
 
 void GrabCutDialogImpl::saveCurrentTrimap()
 {
-    sliceTrimaps_[static_cast<size_t>(CurrentFile)] = Canvas->trimap();
+    sliceTrimaps[static_cast<size_t>(CurrentFile)] = Canvas->trimap();
 }

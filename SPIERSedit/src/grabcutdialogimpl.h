@@ -23,7 +23,7 @@
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
  *
- * Copyright 2024 by the SPIERS contributors.
+ * Copyright 2026 by the SPIERS contributors.
  */
 
 #ifndef GRABCUTDIALOGIMPL_H
@@ -92,7 +92,7 @@ public:
     void setBrushSize(int radius);
 
     /** Return the current trimap (flat byte array, image coords, row-major). */
-    const QByteArray &trimap() const { return trimap_; }
+    const QByteArray &trimap() const { return trimapData; }
 
     /** Clear all scribbles (reset entire trimap to TRIMAP_UNKNOWN). */
     void clearScribbles();
@@ -112,29 +112,29 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    QImage  sourceImage_;        ///< Original colour image (image coords)
-    QImage  displayCache_;       ///< Composited image cached for fast repaint
-    QByteArray trimap_;          ///< Current trimap (image coords, flat)
-    std::vector<uchar> alpha_;   ///< Current alpha result (image coords)
+    QImage  sourceImage;        ///< Original colour image (image coords)
+    QImage  displayCache;       ///< Composited image cached for fast repaint
+    QByteArray trimapData;      ///< Current trimap (image coords, flat)
+    std::vector<uchar> alphaResult;   ///< Current alpha result (image coords)
 
     int imgW_ = 0, imgH_ = 0;
-    int brushRadius_ = 8;
-    bool showScribbles_ = true;
-    bool showAlpha_     = true;
-    int  alphaOpacity_  = 50;   ///< 0–100
+    int brushRadius = 8;
+    bool showScribbles = true;
+    bool showAlpha     = true;
+    int  alphaOpacity  = 50;   ///< 0–100
 
-    bool  painting_   = false;
-    uchar paintValue_ = TRIMAP_FOREGROUND;
+    bool  painting   = false;
+    uchar paintValue = TRIMAP_FOREGROUND;
 
-    bool   displayDirty_ = true;  ///< True when displayCache_ needs rebuild
+    bool   displayDirty = true;  ///< True when displayCache needs rebuild
 
     /// Map a widget-space point to image-space point (nearest pixel, clamped)
     QPoint widgetToImage(const QPoint &pt) const;
 
-    /// Paint a circle of radius brushRadius_ at image coords (cx, cy)
+    /// Paint a circle of radius brushRadius at image coords (cx, cy)
     void paintCircle(int cx, int cy, uchar value);
 
-    /// Rebuild the composited displayCache_ from sourceImage_ + overlays
+    /// Rebuild the composited displayCache from sourceImage + overlays
     void rebuildDisplayCache();
 };
 
@@ -161,7 +161,7 @@ public:
     ~GrabCutDialogImpl() override;
 
     /** True if the user accepted and a valid result was written to GA[]. */
-    bool accepted() const { return accepted_; }
+    bool accepted() const { return wasAccepted; }
 
 private slots:
     // ── Button handlers ──────────────────────────────────────────────────────
@@ -187,21 +187,21 @@ private slots:
     void onPropagationComplete(std::vector<PropagationResult> results, bool cancelled);
 
 private:
-    int  segmentIndex_;
-    bool accepted_ = false;
+    int  segmentIndex;
+    bool wasAccepted = false;
 
     // ── Core algorithm objects ────────────────────────────────────────────────
-    GrabCut       grabCut_;
-    GrabCutState  currentState_;
-    bool          stateValid_ = false;   ///< True once at least one run has completed
+    GrabCut       grabCut;
+    GrabCutState  currentState;
+    bool          stateValid = false;   ///< True once at least one run has completed
 
     // ── Propagation thread ────────────────────────────────────────────────────
-    QThread            *propThread_  = nullptr;
-    SlicePropagation   *propagation_ = nullptr;
+    QThread            *propThread  = nullptr;
+    SlicePropagation   *propagation = nullptr;
 
     // ── Stored per-slice trimaps (to persist scribbles across slices) ─────────
     // Index matches Files[] / GA[] slice indices.
-    std::vector<QByteArray> sliceTrimaps_;
+    std::vector<QByteArray> sliceTrimaps;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -211,7 +211,7 @@ private:
     /** Run the GrabCut algorithm with current parameters and update the canvas. */
     void runGrabCut(int iterations);
 
-    /** Write the current result into GA[segmentIndex_] and mark dirty. */
+    /** Write the current result into GA[segmentIndex] and mark dirty. */
     void commitResultToGA();
 
     /** Set UI enabled state during/after propagation. */
@@ -220,7 +220,7 @@ private:
     /** Build a summary string from propagation results and show in StatusLabel. */
     void showPropagationSummary(const std::vector<PropagationResult> &results);
 
-    /** Save the current canvas trimap into sliceTrimaps_[CurrentFile]. */
+    /** Save the current canvas trimap into sliceTrimaps[CurrentFile]. */
     void saveCurrentTrimap();
 };
 
