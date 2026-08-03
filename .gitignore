@@ -51,3 +51,40 @@ SPIERS.pro.user
 SPIERSview/.DS_Store
 SPIERSview/.DS_Store
 build-SPIERSalign-*/*
+
+
+# Build directories
+build_test/
+SPIERSedit/build/
+SPIERSalign/build/
+SPIERSview/build/
+SPIERSedit/bin/
+SPIERSalign/bin/
+SPIERSview/bin/
+
+# Test binaries and output
+fast_test
+fast_test1
+fast_test2
+nocut_test
+maxflow_test
+quick_test
+debug_gmm
+gamma_sweep
+tlink_check
+test_grabcut
+grabcut_result_*.bmp
+
+# Test source files (not part of the project)
+fast_test*.cpp
+nocut_test.cpp
+maxflow_test.cpp
+quick_test.cpp
+debug_gmm.cpp
+gamma_sweep.cpp
+tlink_check.cpp
+test_grabcut.cpp
+test_grabcut.pro
+
+# PDF documents (not part of codebase)
+*.pdf

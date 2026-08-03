@@ -3171,9 +3171,6 @@ void MainWindowImpl::on_actionAutoSegment_GrabCut_triggered()
 
         // Trigger a full display refresh
         ShowImage(graphicsView);
-
-        // Update the histogram if visible
-        if (MenuHistChecked) GVHist->Refresh();
     }
 }
 

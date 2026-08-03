@@ -291,8 +291,16 @@ GrabCutDialogImpl::GrabCutDialogImpl(int segmentIndex,
     setupUi(this);
     setWindowIcon(QIcon(":/icons/ProgramIcon.bmp"));
 
+    // Create the GrabCut canvas and replace the placeholder widget from the .ui
+    canvas = new GrabCutCanvas(this);
+    canvas->setMinimumSize(400, 400);
+    canvas->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    midLayout->replaceWidget(CanvasPlaceholder, canvas);
+    CanvasPlaceholder->hide();
+
+
     // Connect canvas signal
-    connect(Canvas, &GrabCutCanvas::scribbleCompleted,
+    connect(canvas, &GrabCutCanvas::scribbleCompleted,
             this,   &GrabCutDialogImpl::onScribbleCompleted);
 
     // Initialise trimaps_ to hold one entry per slice
@@ -347,12 +355,12 @@ void GrabCutDialogImpl::initialiseFromCurrentSlice()
         tm = QByteArray(imgWidth * imgHeight, static_cast<char>(TRIMAP_UNKNOWN));
 
     // Set up canvas
-    Canvas->setSourceImage(colImg);
-    Canvas->setTrimap(tm, imgWidth, imgHeight);
-    Canvas->setBrushSize(BrushSizeSpinBox->value());
-    Canvas->setShowScribbles(ShowScribblesCheckBox->isChecked());
-    Canvas->setShowAlpha(ShowAlphaCheckBox->isChecked());
-    Canvas->setAlphaOpacity(AlphaOpacitySlider->value());
+    canvas->setSourceImage(colImg);
+    canvas->setTrimap(tm, imgWidth, imgHeight);
+    canvas->setBrushSize(BrushSizeSpinBox->value());
+    canvas->setShowScribbles(ShowScribblesCheckBox->isChecked());
+    canvas->setShowAlpha(ShowAlphaCheckBox->isChecked());
+    canvas->setAlphaOpacity(AlphaOpacitySlider->value());
 
     // Set up GrabCut engine
     grabCut.setImage(colImg);
@@ -362,10 +370,10 @@ void GrabCutDialogImpl::initialiseFromCurrentSlice()
     // If we have a previously saved state for this slice, restore the alpha
     if (stateValid)
     {
-        Canvas->setAlpha(currentState.alpha);
+        canvas->setAlpha(currentState.alpha);
     }
 
-    Canvas->refresh();
+    canvas->refresh();
     StatusLabel->setText("Draw foreground (green) and background (red) scribbles, then click Run GrabCut.");
 }
 
@@ -420,8 +428,8 @@ void GrabCutDialogImpl::runGrabCut(int iterations)
     stateValid   = true;
 
     // Update canvas overlay
-    Canvas->setAlpha(grabCut.alpha());
-    Canvas->refresh();
+    canvas->setAlpha(grabCut.alpha());
+    canvas->refresh();
 
     ProgressBar->setValue(100);
     StatusLabel->setText(QString("Done. FG pixels: %1")
@@ -446,13 +454,13 @@ void GrabCutDialogImpl::on_RefineButton_clicked()
 
 void GrabCutDialogImpl::on_ClearScribblesButton_clicked()
 {
-    Canvas->clearScribbles();
+    canvas->clearScribbles();
     sliceTrimaps[static_cast<size_t>(CurrentFile)] =
         QByteArray(grabCut.width() * grabCut.height(),
                    static_cast<char>(TRIMAP_UNKNOWN));
     stateValid = false;
-    Canvas->setAlpha({});
-    Canvas->refresh();
+    canvas->setAlpha({});
+    canvas->refresh();
     StatusLabel->setText("Scribbles cleared.");
 }
 
@@ -466,22 +474,22 @@ void GrabCutDialogImpl::onScribbleCompleted()
 
 void GrabCutDialogImpl::on_BrushSizeSpinBox_valueChanged(int v)
 {
-    Canvas->setBrushSize(v);
+    canvas->setBrushSize(v);
 }
 
 void GrabCutDialogImpl::on_ShowScribblesCheckBox_toggled(bool checked)
 {
-    Canvas->setShowScribbles(checked);
+    canvas->setShowScribbles(checked);
 }
 
 void GrabCutDialogImpl::on_ShowAlphaCheckBox_toggled(bool checked)
 {
-    Canvas->setShowAlpha(checked);
+    canvas->setShowAlpha(checked);
 }
 
 void GrabCutDialogImpl::on_AlphaOpacitySlider_valueChanged(int v)
 {
-    Canvas->setAlphaOpacity(v);
+    canvas->setAlphaOpacity(v);
 }
 
 // ─── Accept / Reject ─────────────────────────────────────────────────────────
@@ -663,5 +671,5 @@ void GrabCutDialogImpl::showPropagationSummary(const std::vector<PropagationResu
 
 void GrabCutDialogImpl::saveCurrentTrimap()
 {
-    sliceTrimaps[static_cast<size_t>(CurrentFile)] = Canvas->trimap();
+    sliceTrimaps[static_cast<size_t>(CurrentFile)] = canvas->trimap();
 }

@@ -33,7 +33,7 @@
     <layout class="QHBoxLayout" name="midLayout">
      <!-- Canvas (custom widget, fills available space) -->
      <item>
-      <widget class="GrabCutCanvas" name="Canvas" native="true">
+      <widget class="QWidget" name="CanvasPlaceholder" native="true">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
          <horstretch>1</horstretch>
@@ -300,14 +300,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>GrabCutCanvas</class>
-   <extends>QWidget</extends>
-   <header>grabcutdialogimpl.h</header>
-   <container>0</container>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>

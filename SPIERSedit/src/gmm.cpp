@@ -226,10 +226,62 @@ void GMM::initFromSamples(const std::vector<double> &pixels, int N)
     }
 
     kMeansInit(pixels, N);
-    runKMeans(pixels, N, 5);
+    runKMeans(pixels, N, 10);
 
-    // Run a few EM iterations to set proper covariances and weights
-    fit(pixels, N, 5);
+    // Compute covariances and weights directly from hard k-means assignments.
+    // Soft EM with broad initial covariances collapses all components to the
+    // global mean, so we compute the cluster statistics explicitly.
+    std::vector<int> assignments(static_cast<size_t>(N), 0);
+    for (int i = 0; i < N; i++)
+    {
+        double best = std::numeric_limits<double>::max();
+        int bestK = 0;
+        double r = pixels[static_cast<size_t>(i) * 3 + 0];
+        double g = pixels[static_cast<size_t>(i) * 3 + 1];
+        double b = pixels[static_cast<size_t>(i) * 3 + 2];
+        for (int k = 0; k < K; k++)
+        {
+            double dr = r - components[k].mean[0];
+            double dg = g - components[k].mean[1];
+            double db = b - components[k].mean[2];
+            double d = dr * dr + dg * dg + db * db;
+            if (d < best) { best = d; bestK = k; }
+        }
+        assignments[static_cast<size_t>(i)] = bestK;
+    }
+    for (int k = 0; k < K; k++)
+    {
+        int count = 0;
+        double covAccum[3][3] = {};
+        for (int i = 0; i < N; i++)
+        {
+            if (assignments[static_cast<size_t>(i)] != k) continue;
+            count++;
+            double d[3] = {
+                pixels[static_cast<size_t>(i) * 3 + 0] - components[k].mean[0],
+                pixels[static_cast<size_t>(i) * 3 + 1] - components[k].mean[1],
+                pixels[static_cast<size_t>(i) * 3 + 2] - components[k].mean[2]
+            };
+            for (int p = 0; p < 3; p++)
+                for (int q = 0; q < 3; q++)
+                    covAccum[p][q] += d[p] * d[q];
+        }
+        if (count > 1)
+        {
+            components[k].weight = static_cast<double>(count) / N;
+            for (int p = 0; p < 3; p++)
+                for (int q = 0; q < 3; q++)
+                    components[k].cov[p][q] = covAccum[p][q] / count;
+        }
+        else
+        {
+            components[k].weight = 1.0 / K;
+            for (int p = 0; p < 3; p++)
+                for (int q = 0; q < 3; q++)
+                    components[k].cov[p][q] = (p == q) ? 0.01 : 0.0;
+        }
+        computeInverseAndDet(components[k]);
+    }
 }
 
 int GMM::mostLikelyComponent(double r, double g, double b) const

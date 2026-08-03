@@ -192,6 +192,13 @@ public:
      */
     double gamma = 50.0;
 
+    /**
+     * @brief If true, use the full graph cut for spatial coherence.
+     *        If false (default), use pure GMM classification which is faster
+     *        and currently more reliable.
+     *        TODO: Fix the T-link capacity scaling bug in graphCut() then enable.
+     */
+    bool useGraphCut = false;
 private:
     // Image data stored as flat double triples [R,G,B] normalised to 0–1
     std::vector<double> pixels;  // size = W*H*3
@@ -241,6 +248,11 @@ private:
     /// Step 3: graph cut to update alpha
     void graphCut();
 
+    /**
+     * @brief Classify each unknown pixel by comparing GMM likelihoods directly.
+     *        Used as a faster alternative to graphCut() when useGraphCut is false.
+     */
+    void classifyByGmm();
     /// Inline: pixel index (row-major)
     int pixelIndex(int x, int y) const { return y * imageWidth + x; }
 

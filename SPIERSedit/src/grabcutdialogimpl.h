@@ -187,6 +187,7 @@ private slots:
     void onPropagationComplete(std::vector<PropagationResult> results, bool cancelled);
 
 private:
+    GrabCutCanvas *canvas = nullptr;    ///< Interactive scribble painting canvas
     int  segmentIndex;
     bool wasAccepted = false;
 

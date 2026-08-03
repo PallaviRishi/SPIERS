@@ -51,8 +51,8 @@ int MaxFlowGraph::addEdge(int u, int v, double cap)
     int idxUV = static_cast<int>(adj[static_cast<size_t>(u)].size());
     int idxVU = static_cast<int>(adj[static_cast<size_t>(v)].size());
 
-    adj[static_cast<size_t>(u)].push_back({ v, cap, idxVU });
-    adj[static_cast<size_t>(v)].push_back({ u, 0.0, idxUV });  // reverse edge (residual)
+    adj[static_cast<size_t>(u)].push_back({ cap, v, idxVU });
+    adj[static_cast<size_t>(v)].push_back({ 0.0, u, idxUV });  // reverse edge (residual)
 
     return idxUV; // return index of reverse in v's list (unused but can be helpful)
 }
@@ -71,8 +71,8 @@ void MaxFlowGraph::addNLink(int i, int j, double cap)
     int idxIJ = static_cast<int>(adj[static_cast<size_t>(i)].size());
     int idxJI = static_cast<int>(adj[static_cast<size_t>(j)].size());
 
-    adj[static_cast<size_t>(i)].push_back({ j, cap, idxJI });
-    adj[static_cast<size_t>(j)].push_back({ i, cap, idxIJ });
+    adj[static_cast<size_t>(i)].push_back({ cap, j, idxJI });
+    adj[static_cast<size_t>(j)].push_back({ cap, i, idxIJ });
 }
 
 // ─── Push-relabel core ────────────────────────────────────────────────────────

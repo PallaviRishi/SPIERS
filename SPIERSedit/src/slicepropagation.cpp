@@ -40,14 +40,14 @@ void SlicePropagation::setSeedState(const GrabCutState &state)
     seedState = state;
 }
 
-void SlicePropagation::setTrimaps(const std::vector<QByteArray> &trimaps)
+void SlicePropagation::setTrimaps(const std::vector<QByteArray> &newTrimaps)
 {
-    trimaps = trimaps;
+    trimaps = newTrimaps;
 }
 
-void SlicePropagation::setFileList(const QStringList &files)
+void SlicePropagation::setFileList(const QStringList &fileList)
 {
-    files = files;
+    files = fileList;
 }
 
 void SlicePropagation::setImageDimensions(int width, int height, int fw4)
@@ -57,9 +57,9 @@ void SlicePropagation::setImageDimensions(int width, int height, int fw4)
     fwidth4 = fw4;
 }
 
-void SlicePropagation::setParams(const PropagationParams &params)
+void SlicePropagation::setParams(const PropagationParams &propagationParams)
 {
-    params = params;
+    params = propagationParams;
 }
 
 void SlicePropagation::cancel()

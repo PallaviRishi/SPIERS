@@ -367,6 +367,36 @@ void GrabCut::refitGMMs()
  *     source side → ALPHA_FG
  *     sink   side → ALPHA_BG
  */
+
+/**
+ * @brief Classify each unknown pixel by comparing fg and bg GMM likelihoods.
+ *        Faster than graphCut() and avoids the T-link scaling issue.
+ *        Pixels with higher P(z|fg) are assigned ALPHA_FG, otherwise ALPHA_BG.
+ *        Trimap-forced pixels are always honoured.
+ */
+void GrabCut::classifyByGmm()
+{
+    int pixelCount = imageWidth * imageHeight;
+    for (int i = 0; i < pixelCount; i++)
+    {
+        uchar t = trimap[static_cast<size_t>(i)];
+        if (t == TRIMAP_FOREGROUND)
+            state.alpha[static_cast<size_t>(i)] = ALPHA_FG;
+        else if (t == TRIMAP_BACKGROUND)
+            state.alpha[static_cast<size_t>(i)] = ALPHA_BG;
+        else
+        {
+            double r;
+            double g;
+            double b;
+            getPixel(i, r, g, b);
+            double pFg = state.fgGmm.probability(r, g, b);
+            double pBg = state.bgGmm.probability(r, g, b);
+            state.alpha[static_cast<size_t>(i)] = (pFg > pBg) ? ALPHA_FG : ALPHA_BG;
+        }
+    }
+}
+
 void GrabCut::graphCut()
 {
     int N = imageWidth * imageHeight;
@@ -389,11 +419,17 @@ void GrabCut::graphCut()
         }
         else // TRIMAP_UNKNOWN
         {
-            double costFG = dataTermFG(i);  // -log P(z | fg) → cost of fg
-            double costBG = dataTermBG(i);  // -log P(z | bg) → cost of bg
-            // S→i cap = costBG (cutting S→i means assigning to bg, cost of bg)
-            // i→T cap = costFG (cutting i→T means assigning to fg, cost of fg)
-            graph.addTLink(i, costBG, costFG);
+            double costFG = dataTermFG(i);
+            double costBG = dataTermBG(i);
+            // Use only the positive part of each cost as a T-link capacity.
+            // When -log P(z|model) is negative (density > 1), it means the pixel
+            // is very likely under that model — so the cost of assigning it away
+            // from that model should be high, not zero. We use max(0, cost) for
+            // the "away" link and the absolute value of the difference as the
+            // "towards" link.
+            double capToSource = std::max(0.0, costBG - costFG); // cost of bg assignment
+            double capToSink   = std::max(0.0, costFG - costBG); // cost of fg assignment
+            graph.addTLink(i, capToSource, capToSink);
         }
     }
 
@@ -469,13 +505,26 @@ void GrabCut::runOneIteration()
 
     assignGMMComponents();
     refitGMMs();
-    graphCut();
+    if (useGraphCut)
+        graphCut();
+    else
+        classifyByGmm();
 }
 
 void GrabCut::run(int iterations)
 {
     if (!state.isInitialised)
         initialise();
+
+    if (!useGraphCut)
+    {
+        // GMM-only mode: classify directly using the initial GMMs.
+        // No iteration needed since there is no spatial feedback loop.
+        classifyByGmm();
+        if (progressCb)
+            progressCb(100);
+        return;
+    }
 
     for (int iter = 0; iter < iterations; iter++)
     {
