@@ -44,4 +44,18 @@ extern double CalcPoly(unsigned char r, unsigned char g, unsigned char b, Segmen
 extern void SaveMainImage(QString fname);
 extern QByteArray DoMaskLocking();
 
+// ── GrabCut generation mode ───────────────────────────────────────────────────
+/**
+ * @brief Apply a pre-computed GrabCut alpha result to GA[seg] for file fnum.
+ *
+ * Called from the generation pipeline when a segment has a saved GrabCut state.
+ * Loads the stored alpha QByteArray (one byte per pixel, 255=fg, 0=bg) and
+ * writes it into GA[seg], respecting the mask-locking system.
+ *
+ * @param seg    Segment index
+ * @param fnum   File (slice) index
+ * @param flag   If true, skip LoadAllData / SaveGreyData (caller manages I/O)
+ */
+extern void MakeGrabCutGreyScale(int seg, int fnum, bool flag);
+
 #endif // __DISPLAY_H__

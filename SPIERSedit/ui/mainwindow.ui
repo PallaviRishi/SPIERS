@@ -369,6 +369,8 @@
     <addaction name="actionDeactivate_selected_segments"/>
     <addaction name="separator"/>
     <addaction name="actionDistribute_over_range"/>
+    <addaction name="separator"/>
+    <addaction name="actionAutoSegment_GrabCut"/>
    </widget>
    <widget class="QMenu" name="menuMasks">
     <property name="enabled">
@@ -4421,6 +4423,14 @@ Interpreted Images:</string>
   <action name="actionDistribute_over_range">
    <property name="text">
     <string>Distribute over range</string>
+   </property>
+  </action>
+  <action name="actionAutoSegment_GrabCut">
+   <property name="text">
+    <string>Auto-segment (GrabCut)...</string>
+   </property>
+   <property name="toolTip">
+    <string>Interactively segment the current slice using GrabCut and optionally propagate to adjacent slices</string>
    </property>
   </action>
   <action name="actionChange_downsampling">

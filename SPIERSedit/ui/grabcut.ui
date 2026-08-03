@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>GrabCutDialog</class>
+ <widget class="QDialog" name="GrabCutDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>GrabCut Auto-Segmentation</string>
+  </property>
+  <property name="modal">
+   <bool>true</bool>
+  </property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <!-- ── Instruction bar ── -->
+   <item>
+    <widget class="QLabel" name="InstructionLabel">
+     <property name="text">
+      <string>Paint scribbles: &lt;b&gt;Left-click&lt;/b&gt; = Foreground (green)  |  &lt;b&gt;Right-click&lt;/b&gt; = Background (red)  |  &lt;b&gt;Middle-click / Ctrl+drag&lt;/b&gt; = Erase scribble</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignCenter</set>
+     </property>
+    </widget>
+   </item>
+   <!-- ── Main area: canvas + right-hand controls ── -->
+   <item>
+    <layout class="QHBoxLayout" name="midLayout">
+     <!-- Canvas (custom widget, fills available space) -->
+     <item>
+      <widget class="GrabCutCanvas" name="Canvas" native="true">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>400</width>
+         <height>400</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <!-- Right-hand control panel -->
+     <item>
+      <layout class="QVBoxLayout" name="controlLayout">
+       <!-- Brush size -->
+       <item>
+        <widget class="QGroupBox" name="BrushGroup">
+         <property name="title">
+          <string>Brush</string>
+         </property>
+         <layout class="QVBoxLayout">
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="BrushSizeLabel">
+              <property name="text"><string>Size</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="BrushSizeSpinBox">
+              <property name="minimum"><number>1</number></property>
+              <property name="maximum"><number>50</number></property>
+              <property name="value"><number>8</number></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="ShowScribblesCheckBox">
+            <property name="text"><string>Show scribbles</string></property>
+            <property name="checked"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="ShowAlphaCheckBox">
+            <property name="text"><string>Show segmentation</string></property>
+            <property name="checked"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="AlphaOpacityLabel">
+              <property name="text"><string>Overlay opacity</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSlider" name="AlphaOpacitySlider">
+              <property name="minimum"><number>0</number></property>
+              <property name="maximum"><number>100</number></property>
+              <property name="value"><number>50</number></property>
+              <property name="orientation"><enum>Qt::Horizontal</enum></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <!-- GrabCut parameters -->
+       <item>
+        <widget class="QGroupBox" name="GrabCutGroup">
+         <property name="title">
+          <string>GrabCut</string>
+         </property>
+         <layout class="QVBoxLayout">
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="IterationsLabel">
+              <property name="text"><string>Iterations</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="IterationsSpinBox">
+              <property name="minimum"><number>1</number></property>
+              <property name="maximum"><number>20</number></property>
+              <property name="value"><number>5</number></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="GammaLabel">
+              <property name="text"><string>Smoothness (γ)</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QDoubleSpinBox" name="GammaSpinBox">
+              <property name="minimum"><double>1.0</double></property>
+              <property name="maximum"><double>500.0</double></property>
+              <property name="singleStep"><double>5.0</double></property>
+              <property name="value"><double>50.0</double></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QPushButton" name="RunButton">
+            <property name="text"><string>Run GrabCut</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="RefineButton">
+            <property name="text"><string>Refine (1 iteration)</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="ClearScribblesButton">
+            <property name="text"><string>Clear all scribbles</string></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <!-- Propagation -->
+       <item>
+        <widget class="QGroupBox" name="PropagationGroup">
+         <property name="title">
+          <string>Propagation</string>
+         </property>
+         <layout class="QVBoxLayout">
+          <item>
+           <widget class="QLabel" name="PropInfoLabel">
+            <property name="text"><string>Propagate this segmentation to a range of slices.</string></property>
+            <property name="wordWrap"><bool>true</bool></property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="PropFromLabel">
+              <property name="text"><string>From slice</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="PropFromSpinBox">
+              <property name="minimum"><number>0</number></property>
+              <property name="maximum"><number>99999</number></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="PropToLabel">
+              <property name="text"><string>To slice</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="PropToSpinBox">
+              <property name="minimum"><number>0</number></property>
+              <property name="maximum"><number>99999</number></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QLabel" name="PropIterationsLabel">
+              <property name="text"><string>Iterations/slice</string></property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="PropIterationsSpinBox">
+              <property name="minimum"><number>1</number></property>
+              <property name="maximum"><number>10</number></property>
+              <property name="value"><number>3</number></property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="PropOverwriteCheckBox">
+            <property name="text"><string>Overwrite existing data</string></property>
+            <property name="checked"><bool>false</bool></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="PropagateButton">
+            <property name="text"><string>Propagate to range</string></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="CancelPropButton">
+            <property name="text"><string>Cancel propagation</string></property>
+            <property name="enabled"><bool>false</bool></property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <!-- Progress -->
+       <item>
+        <widget class="QProgressBar" name="ProgressBar">
+         <property name="value"><number>0</number></property>
+         <property name="textVisible"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="StatusLabel">
+         <property name="text"><string>Ready.</string></property>
+         <property name="wordWrap"><bool>true</bool></property>
+        </widget>
+       </item>
+       <item>
+        <spacer>
+         <property name="orientation"><enum>Qt::Vertical</enum></property>
+         <property name="sizeHint" stdset="0">
+          <size><width>20</width><height>40</height></size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+   <!-- ── Bottom button row ── -->
+   <item>
+    <layout class="QHBoxLayout" name="bottomLayout">
+     <item>
+      <widget class="QLabel" name="SliceLabel">
+       <property name="text"><string>Slice: 0</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="SegmentLabel">
+       <property name="text"><string>Segment: —</string></property>
+      </widget>
+     </item>
+     <item>
+      <spacer>
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+       <property name="sizeHint" stdset="0">
+        <size><width>40</width><height>20</height></size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QDialogButtonBox" name="buttonBox">
+       <property name="standardButtons">
+        <set>QDialogButtonBox::Ok|QDialogButtonBox::Cancel</set>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>GrabCutCanvas</class>
+   <extends>QWidget</extends>
+   <header>grabcutdialogimpl.h</header>
+   <container>0</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

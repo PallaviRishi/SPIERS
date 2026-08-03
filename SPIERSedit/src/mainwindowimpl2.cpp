@@ -19,6 +19,7 @@
 #include "keysafespinbox.h"
 #include "distributedialogimpl.h"
 #include "exportdxf.h"
+#include "grabcutdialogimpl.h"
 #include "mainwindowimpl.h"
 #include "copyingimpl.h"
 #include "selectsegmentimpl.h"
@@ -3119,6 +3120,60 @@ void MainWindowImpl::on_actionDistribute_over_range_triggered()
         DistributeDialogImpl dialog;
         dialog.exec();
         rangescene->Refresh();
+    }
+}
+
+/**
+ * @brief Open the GrabCut interactive segmentation dialog for the current segment.
+ *
+ * Guards:
+ *   - A dataset must be loaded (Active must be true).
+ *   - Exactly one segment must be selected.
+ *   - The colour image for the current slice must be available.
+ *
+ * On acceptance the dialog has already written the result into GA[seg] and
+ * saved it to disk. We reload the current slice data and trigger a display
+ * refresh so the new segmentation is immediately visible.
+ */
+void MainWindowImpl::on_actionAutoSegment_GrabCut_triggered()
+{
+    if (!Active)
+    {
+        Message("No dataset loaded. Please open a .spe file first.");
+        return;
+    }
+
+    // Determine which segment to operate on: use the currently selected segment
+    // (CurrentSegment), or ask the user if none is selected.
+    if (CurrentSegment < 0 || CurrentSegment >= SegmentCount)
+    {
+        Message("Please select a segment in the Segments panel before running GrabCut.");
+        return;
+    }
+
+    if (ColArray.isNull())
+    {
+        Message("No colour image available for the current slice.");
+        return;
+    }
+
+    // Load all data for the current slice (ensures GA[] is populated)
+    LoadAllData(CurrentFile);
+
+    // Open the dialog — it handles everything internally
+    GrabCutDialogImpl dlg(CurrentSegment, this);
+    dlg.exec();
+
+    if (dlg.accepted())
+    {
+        // Reload the slice to pick up changes written by the dialog
+        LoadAllData(CurrentFile);
+
+        // Trigger a full display refresh
+        ShowImage(graphicsView);
+
+        // Update the histogram if visible
+        if (MenuHistChecked) GVHist->Refresh();
     }
 }
 

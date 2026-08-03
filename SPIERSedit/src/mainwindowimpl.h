@@ -68,6 +68,7 @@ private slots:
     void on_CheckBoxRangeSelectedOnly_toggled(bool checked);
     void on_CheckBoxRangeHardFill_toggled(bool checked);
     void on_actionDistribute_over_range_triggered();
+    void on_actionAutoSegment_GrabCut_triggered();
     void on_SpinBoxRangeBase_valueChanged(int v);
     void on_SpinBoxRangeTop_valueChanged(int v);
     void on_actionHidden_masks_locked_for_generation_triggered();
