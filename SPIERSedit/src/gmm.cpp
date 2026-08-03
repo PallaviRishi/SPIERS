@@ -304,6 +304,25 @@ double GMM::probability(double r, double g, double b) const
     return p;
 }
 
+double GMM::componentEnergy(int k, double r, double g, double b) const
+{
+    const GMMComponent &c = components[k];
+
+    // Mahalanobis squared distance: (z - mu)^T * Sigma^{-1} * (z - mu)
+    double d[3] = { r - c.mean[0], g - c.mean[1], b - c.mean[2] };
+    double mahal = 0.0;
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            mahal += d[i] * c.covInv[i][j] * d[j];
+
+    // Energy = -log(pi_k) + 0.5 * mahalanobis^2
+    // The log(det) term is omitted as it is constant per component and cancels
+    // in energy differences. This guarantees non-negative output since
+    // -log(pi_k) >= 0 (weights are in (0,1]) and mahal >= 0.
+    double logWeight = -std::log(std::max(c.weight, 1e-10));
+    return logWeight + 0.5 * mahal;
+}
+
 void GMM::fit(const std::vector<double> &pixels, int N, int iters)
 {
     for (int iter = 0; iter < iters; iter++)

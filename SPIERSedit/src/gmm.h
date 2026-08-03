@@ -87,6 +87,18 @@ public:
     double probability(double r, double g, double b) const;
 
     /**
+     * @brief Compute the non-negative data energy for pixel (r,g,b) assigned to
+     *        component k. Correct formulation for graph cut T-links:
+     *        E = -log(pi_k) + 0.5*log(det(Sigma_k)) + 0.5*mahalanobis^2
+     *        Always >= 0.
+     * @param k  Component index (0..K-1).
+     * @param r  Red channel value (0-1).
+     * @param g  Green channel value (0-1).
+     * @param b  Blue channel value (0-1).
+     * @return   Non-negative energy value.
+     */
+    double componentEnergy(int k, double r, double g, double b) const;
+    /**
      * @brief Full EM iteration: E-step + M-step on the provided sample set.
      * @param pixels  Flat RGB triples, size 3*N.
      * @param N       Number of pixels.

@@ -365,7 +365,6 @@ void GrabCutDialogImpl::initialiseFromCurrentSlice()
     // Set up GrabCut engine
     grabCut.setImage(colImg);
     grabCut.setTrimap(tm);
-    grabCut.gamma = GammaSpinBox->value();
 
     // If we have a previously saved state for this slice, restore the alpha
     if (stateValid)
@@ -409,7 +408,6 @@ void GrabCutDialogImpl::runGrabCut(int iterations)
 
     // Set up fresh engine state
     grabCut.setTrimap(tm);
-    grabCut.gamma = GammaSpinBox->value();
 
     grabCut.setProgressCallback([this](int pct)
     {

@@ -65,7 +65,6 @@ HEADERS += src/display.h \
     src/grabcutdialogimpl.h \
     src/grabcutglobals.h \
     src/grabcutpersistence.h \
-    src/maxflow.h \
     src/slicepropagation.h \
     src/beamhardening.h \
     src/beamhardeningcentericon.h \
@@ -110,7 +109,6 @@ SOURCES += src/display.cpp \
     src/grabcutdialogimpl.cpp \
     src/grabcutglobals.cpp \
     src/grabcutpersistence.cpp \
-    src/maxflow.cpp \
     src/slicepropagation.cpp \
     src/beamhardening.cpp \
     src/beamhardeningcentericon.cpp \

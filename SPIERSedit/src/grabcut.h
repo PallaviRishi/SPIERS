@@ -1,15 +1,11 @@
 /**
  * @file
- * Header: GrabCut Segmentation Algorithm
+ * Header: GMM-based Segmentation Engine
  *
- * Implements the GrabCut algorithm as described in:
- *   Rother, Kolmogorov & Blake, "GrabCut: Interactive Foreground Extraction
- *   using Iterated Graph Cuts", SIGGRAPH 2004.
- *
- * The algorithm iterates between:
- *   1. Assigning each pixel to a GMM component (E-step)
- *   2. Re-estimating GMM parameters from those assignments (M-step)
- *   3. Minimising a Gibbs energy via graph cut to update the alpha (fg/bg) mask
+ * Implements interactive foreground/background segmentation using Gaussian
+ * Mixture Models (GMMs). The user paints scribbles to indicate definite
+ * foreground and background regions; the algorithm then classifies all
+ * remaining pixels by comparing their colour likelihood under the two models.
  *
  * Inputs:
  *   - A QImage (RGB or greyscale) — the source tomogram slice
@@ -19,12 +15,12 @@
  *       TRIMAP_UNKNOWN     — to be determined by the algorithm
  *
  * Output:
- *   - A QByteArray alpha mask: ALPHA_FG (255) or ALPHA_BG (0) per pixel
- *   - The fitted foreground and background GMMs (for propagation to adj. slices)
+ *   - A per-pixel alpha mask: ALPHA_FG (255) or ALPHA_BG (0)
+ *   - The fitted foreground and background GMMs (for propagation to adjacent slices)
  *
  * The output alpha mask is written directly into the SPIERSedit GA[] greyscale
- * image for the current segment, so it integrates with the existing threshold
- * system (pixels >= 128 are fossil). FG pixels get value 255, BG pixels get 0.
+ * image for the current segment, integrating with the existing threshold system
+ * (pixels >= 128 are treated as fossil). Foreground pixels get 255, background 0.
  *
  * All SPIERSedit code is released under the GNU General Public License.
  * See LICENSE.md files in the programme directory.
@@ -35,14 +31,15 @@
 #ifndef GRABCUT_H
 #define GRABCUT_H
 
-#include <QImage>
-#include <QByteArray>
-#include <vector>
-#include <functional>
 #include "gmm.h"
-#include "maxflow.h"
 
-// ─── Trimap label values ─────────────────────────────────────────────────────
+#include <QByteArray>
+#include <QImage>
+
+#include <functional>
+#include <vector>
+
+// ─── Trimap label values ──────────────────────────────────────────────────────
 
 static constexpr uchar TRIMAP_BACKGROUND = 0;   ///< Definite background
 static constexpr uchar TRIMAP_FOREGROUND = 255;  ///< Definite foreground
@@ -50,11 +47,11 @@ static constexpr uchar TRIMAP_UNKNOWN    = 128;  ///< Unknown — algorithm deci
 
 // ─── Alpha mask values ────────────────────────────────────────────────────────
 
-static constexpr uchar ALPHA_BG = 0;    ///< Background pixel in output GA[]
-static constexpr uchar ALPHA_FG = 255;  ///< Foreground pixel in output GA[]
+static constexpr uchar ALPHA_BG = 0;   ///< Background pixel in output GA[]
+static constexpr uchar ALPHA_FG = 255; ///< Foreground pixel in output GA[]
 
 /**
- * @brief Encapsulates the full state of a GrabCut session for one slice.
+ * @brief Encapsulates the full state of a segmentation session for one slice.
  *
  * Holds the fitted GMMs, the per-pixel component assignments, and the current
  * alpha mask. Can be serialised for persistence and used as a warm-start seed
@@ -62,45 +59,42 @@ static constexpr uchar ALPHA_FG = 255;  ///< Foreground pixel in output GA[]
  */
 struct GrabCutState
 {
-    GMM fgGmm;  ///< Foreground Gaussian Mixture Model (K=5 components)
     GMM bgGmm;  ///< Background Gaussian Mixture Model (K=5 components)
+    GMM fgGmm;  ///< Foreground Gaussian Mixture Model (K=5 components)
 
-    /// Per-pixel GMM component assignment (0..K-1), size = width*height
-    std::vector<int> componentMap;
+    std::vector<uchar> alpha;       ///< Current segmentation: ALPHA_FG or ALPHA_BG
+    std::vector<int> componentMap;  ///< Per-pixel GMM component assignment (0..K-1)
 
-    /// Current segmentation: ALPHA_FG or ALPHA_BG, size = width*height
-    std::vector<uchar> alpha;
+    bool isInitialised = false; ///< True once GMMs have been seeded from a trimap
 
-    bool isInitialised = false;
-
-    void clear() { isInitialised = false; componentMap.clear(); alpha.clear(); }
+    void clear()
+    {
+        isInitialised = false;
+        alpha.clear();
+        componentMap.clear();
+    }
 };
 
 /**
- * @brief The GrabCut engine.
+ * @brief GMM-based segmentation engine.
  *
  * Typical usage for a new slice:
  * @code
  *   GrabCut gc;
  *   gc.setImage(colourImage);
  *   gc.setTrimap(trimap);
- *   gc.initialise();          // seeds GMMs from trimap scribbles
- *   gc.run(5);                // 5 iterations
- *   QByteArray result = gc.alphaAsGAImage();  // write into GA[]
- *   GrabCutState state = gc.getState();       // save for propagation
+ *   gc.initialise();
+ *   gc.run(1);
+ *   QByteArray result = gc.alphaAsGAImage(fwidth4);
+ *   GrabCutState savedState = gc.getState();
  * @endcode
  *
  * Warm-start from a propagated state (adjacent slice):
  * @code
  *   gc.setImage(newImage);
- *   gc.setTrimap(newTrimap);  // may be empty/unknown if no new scribbles
+ *   gc.setTrimap(newTrimap);
  *   gc.setState(propagatedState);
- *   gc.run(3);
- * @endcode
- *
- * Progress callback (optional, for UI progress bar):
- * @code
- *   gc.setProgressCallback([](int pct){ myProgressBar->setValue(pct); });
+ *   gc.run(1);
  * @endcode
  */
 class GrabCut
@@ -113,25 +107,25 @@ public:
     /**
      * @brief Set the source colour image for this slice.
      *        Accepts RGB32, ARGB32, Indexed8 or Grayscale8 QImages.
-     *        Greyscale images are treated as R=G=B.
+     * @param img  Source image.
      */
     void setImage(const QImage &img);
 
     /**
-     * @brief Set the trimap defining forced fg/bg scribbles and unknown region.
-     * @param trimap  One byte per pixel (row-major). Use TRIMAP_* constants.
-     *                Must match image dimensions.
+     * @brief Set the trimap defining forced fg/bg regions and the unknown area.
+     * @param trimapData  One byte per pixel (row-major). Use TRIMAP_* constants.
      */
-    void setTrimap(const QByteArray &trimap);
+    void setTrimap(const QByteArray &trimapData);
 
     /**
-     * @brief Restore from a previously saved state (e.g. from adjacent slice).
-     *        GMMs are reused; alpha is reinitialised from the new trimap.
+     * @brief Restore from a previously saved state (e.g. from an adjacent slice).
+     * @param savedState  State to restore from.
      */
     void setState(const GrabCutState &savedState);
 
     /**
-     * @brief Optional progress callback. Called with integer 0–100 during run().
+     * @brief Optional progress callback, called with integer 0-100 during run().
+     * @param cb  Callback function.
      */
     void setProgressCallback(std::function<void(int)> cb) { progressCb = cb; }
 
@@ -139,124 +133,73 @@ public:
 
     /**
      * @brief Seed the foreground and background GMMs from the trimap scribbles.
-     *        Must be called before run() on a fresh (non-warm-started) slice.
+     *        Must be called before run() when starting on a fresh slice.
      */
     void initialise();
 
     /**
-     * @brief Run N full GrabCut iterations (GMM fit + graph cut).
-     * @param iterations  Number of iterations. 5 is typically sufficient.
+     * @brief Run the segmentation. Classifies all unknown pixels by comparing
+     *        their colour likelihood under the foreground and background GMMs.
+     * @param iterations  Number of iterations (GMM refit cycles). 1 is typically
+     *                    sufficient; more iterations refine using the output.
      */
-    void run(int iterations = 5);
+    void run(int iterations = 1);
 
     /**
-     * @brief Run a single GrabCut iteration (one GMM refit + one graph cut).
-     *        Useful for incremental/interactive updates after new scribbles.
+     * @brief Run a single iteration: refit GMMs from current alpha then reclassify.
      */
     void runOneIteration();
 
     // ── Output ────────────────────────────────────────────────────────────────
 
     /**
-     * @brief Return the current alpha mask as a flat byte array (size = width*height).
-     *        Each byte is ALPHA_FG (255) or ALPHA_BG (0).
-     *        Forced fg/bg trimap regions are always honoured.
+     * @brief Return the current alpha mask (size = width * height).
+     *        Each element is ALPHA_FG (255) or ALPHA_BG (0).
      */
     const std::vector<uchar> &alpha() const { return state.alpha; }
 
     /**
-     * @brief Return the alpha mask formatted as a QByteArray suitable for
-     *        writing directly into GA[seg] (the SPIERSedit greyscale image).
-     *        Output is row-major, one byte per pixel, 255=fossil, 0=background.
-     *        Respects fwidth4 padding (stride = ((width+3)/4)*4).
-     * @param fwidth4  The padded row stride used by SPIERSedit's QImage (GA[]).
+     * @brief Return the alpha mask formatted for writing into GA[seg].
+     *        Respects the fwidth4 row stride.
+     * @param fwidth4  Padded row stride used by SPIERSedit's GA[] QImage.
      */
     QByteArray alphaAsGAImage(int fwidth4) const;
 
     /**
-     * @brief Get the current full algorithm state for persistence/propagation.
+     * @brief Get the current algorithm state for persistence or propagation.
      */
     GrabCutState getState() const { return state; }
 
     /**
-     * @brief Image width and height (set after setImage()).
+     * @brief Image width (valid after setImage()).
      */
-    int width()  const { return imageWidth; }
+    int width() const { return imageWidth; }
+
+    /**
+     * @brief Image height (valid after setImage()).
+     */
     int height() const { return imageHeight; }
 
-    // ── Beta (smoothness) parameter ───────────────────────────────────────────
-
-    /**
-     * @brief Smoothness weight gamma for the N-link Potts term.
-     *        Default 50.0 — as in the original Rother et al. paper.
-     */
-    double gamma = 50.0;
-
-    /**
-     * @brief If true, use the full graph cut for spatial coherence.
-     *        If false (default), use pure GMM classification which is faster
-     *        and currently more reliable.
-     *        TODO: Fix the T-link capacity scaling bug in graphCut() then enable.
-     */
-    bool useGraphCut = false;
 private:
-    // Image data stored as flat double triples [R,G,B] normalised to 0–1
-    std::vector<double> pixels;  // size = W*H*3
-    int imageHeight = 0;
-    int imageWidth = 0;
+    int imageHeight = 0;  ///< Image height in pixels
+    int imageWidth = 0;   ///< Image width in pixels
 
-    // Trimap (one byte per pixel, flat row-major)
-    std::vector<uchar> trimap;
+    GrabCutState state; ///< Current algorithm state (GMMs + alpha + componentMap)
 
-    // Algorithm state
-    GrabCutState state;
+    std::function<void(int)> progressCb; ///< Optional progress callback
 
-    // Precomputed N-link weights (4-connected grid: right, down, right-down, right-up)
-    // Stored as parallel arrays indexed by pixel i for neighbour direction d
-    // Directions: 0=right, 1=down, 2=diag-down-right, 3=diag-up-right
-    struct NLinkWeights
-    {
-        std::vector<double> right, down, diagDR, diagUR;
-    } nlinks;
-
-    // Beta: contrast-normalisation factor for N-links
-    double beta = 0.0;
-
-    // Progress callback
-    std::function<void(int)> progressCb;
-
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    /// Precompute beta = 1 / (2 * mean squared colour difference between neighbours)
-    void computeBeta();
-
-    /// Precompute all N-link weights from image gradients
-    void computeNLinks();
-
-    /// N-link weight between pixels at distance vector (dx,dy)
-    double nLinkWeight(int x1, int y1, int x2, int y2) const;
-
-    /// Initialise alpha from trimap: TRIMAP_FG→ALPHA_FG, else→ALPHA_BG
-    void initAlphaFromTrimap();
-
-    /// Step 1 of each GrabCut iteration: assign each unknown pixel to a GMM component
-    void assignGMMComponents();
-
-    /// Step 2: refit GMMs from current component assignments
-    void refitGMMs();
-
-    /// Step 3: graph cut to update alpha
-    void graphCut();
+    std::vector<double> pixels; ///< Flat RGB triples normalised to 0-1, size W*H*3
+    std::vector<uchar> trimap;  ///< Trimap (one byte per pixel, flat row-major)
 
     /**
-     * @brief Classify each unknown pixel by comparing GMM likelihoods directly.
-     *        Used as a faster alternative to graphCut() when useGraphCut is false.
+     * @brief Classify each unknown pixel by comparing fg and bg GMM likelihoods.
+     *        Trimap-forced pixels are always honoured.
      */
     void classifyByGmm();
-    /// Inline: pixel index (row-major)
-    int pixelIndex(int x, int y) const { return y * imageWidth + x; }
 
-    /// Get normalised RGB for pixel i
+    /**
+     * @brief Get normalised RGB for pixel index i.
+     */
     void getPixel(int i, double &r, double &g, double &b) const
     {
         r = pixels[static_cast<size_t>(i) * 3 + 0];
@@ -264,11 +207,15 @@ private:
         b = pixels[static_cast<size_t>(i) * 3 + 2];
     }
 
-    /// T-link capacity: -log P(pixel | GMM)  (clamped to avoid inf)
-    double dataTermFG(int i) const;
-    double dataTermBG(int i) const;
+    /**
+     * @brief Initialise alpha from the trimap.
+     */
+    void initAlphaFromTrimap();
 
-    static constexpr double LOG_CLAMP = 1e-10;  ///< Prevents log(0)
+    /**
+     * @brief Convert (x, y) to flat index.
+     */
+    int pixelIndex(int x, int y) const { return y * imageWidth + x; }
 };
 
 #endif // GRABCUT_H
