@@ -19,29 +19,30 @@ Once a single slice is segmented, the fitted GMMs can be propagated to adjacent 
 
 ## Results
 
-Tested on the "Hairy Ball" fossil dataset (324 slices, 624 x 710 pixels, 24-bit colour BMPs). Ground truth is the existing manually-edited s1_ segment files.
+Tested on the "Hairy Ball" fossil dataset (324 slices, 624 x 710 pixels, 24-bit colour BMPs). Ground truth is a fully manually-segmented binary mask set (0 = background, 255 = fossil) produced by hand-editing every pixel.
 
 ### Single slice (slice 150, representative mid-stack)
 
 | Metric | Value |
 |--------|-------|
-| Accuracy | 96.4% |
-| Precision | 97.0% |
-| Recall | 94.0% |
-| IoU | 91.4% |
-| Runtime | 115 ms |
+| Accuracy | 96.7% |
+| Precision | 87.3% |
+| Recall | 95.6% |
+| Runtime | 102 ms |
 
 ### Full stack (33 slices sampled, every 10th)
 
 | Metric | Value |
 |--------|-------|
-| Accuracy | 92.1% |
-| Precision | 99.3% |
-| Recall | 86.0% |
-| IoU | 85.4% |
-| Avg runtime | 103 ms/slice |
+| Accuracy | 96.1% |
+| Precision | 87.3% |
+| Recall | 95.6% |
+| IoU | 83.9% |
+| Avg runtime | 102 ms/slice |
 
-The lower overall recall is driven by the first and last slices in the stack where the fossil cross-section is minimal or barely visible. Mid-stack slices (031–282) consistently achieve 93–99% accuracy.
+Per-slice accuracy is consistently 91–99% across the full stack with no collapse on edge slices.
+
+The 87% precision indicates slight over-segmentation at boundaries — some edge pixels are classified as fossil that the manual segmenter excluded. This is correctable with a few seconds of brush editing.
 
 ### Comparison with existing SPIERSedit linear threshold
 
@@ -49,7 +50,7 @@ The lower overall recall is driven by the first and last slices in the stack whe
 |--------|----------|-------|
 | SPIERSedit default (linear brightness threshold, no manual tuning) | 59% | Default expects brighter = fossil; this specimen is darker than background |
 | SPIERSedit with manual inversion + optimal threshold | 93–99% | Requires user to discover inversion is needed and find the right threshold |
-| **This GMM method (from scribbles)** | **92–96%** | Automatic — no threshold tuning, no inversion knowledge required |
+| **This GMM method (from scribbles)** | **96.1%** | Automatic — no threshold tuning, no inversion knowledge required |
 
 The key advantage is not marginal accuracy improvement but workflow improvement: the user paints a few scribbles and gets a good result in 100ms, rather than needing to understand and manually adjust RGB weights, inversion, and global slider position per-slice.
 
