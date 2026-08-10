@@ -88,3 +88,59 @@ make -j$(nproc)
 ```
 
 The binary is produced at `SPIERSedit/bin/SPIERSedit64`.
+
+
+## Integration with the ML (Random Forest) system
+
+The GMM module includes `gmmautosample.h/cpp` which provides automatic training sample generation for the Random Forest pipeline on the `Qt6-and-AI` branch.
+
+### The problem it solves
+
+The RF system requires the user to manually paint thousands of labelled training pixels across multiple slices (step 4 of the ML workflow). This is the most tedious and time-consuming part of the ML pipeline.
+
+### How it works
+
+`gmmAutoSample()` takes a few user scribbles, runs GMM classification (100ms), and exports high-confidence pixels as labelled training points in the format expected by `MLInterface::Sample()`. Only pixels where the GMM is confident (likelihood ratio > threshold) are included, ensuring the RF gets clean training data.
+
+### Integration into MLInterface
+
+To add a "Auto-sample from GMM" button to the ML tab:
+
+```cpp
+#include "gmmautosample.h"
+
+// In MLInterface — called when user clicks "Auto-sample from GMM":
+void MLInterface::AutoSampleFromGMM()
+{
+    // Build trimap from current locks (user's initial scribbles)
+    QByteArray trimap = buildTrimapFromLocks(CurrentFile, 0, 1);
+
+    // Run GMM and get high-confidence labelled points
+    QVector<GmmLabelledPoint> autoLabels = gmmAutoSample(
+        CurrentFile,
+        ColArray,
+        trimap,
+        0,              // foreground segment index
+        1,              // background segment index
+        3.0,            // confidence threshold
+        20000           // max points per class
+    );
+
+    // Convert to LabelledPoint and append to training set
+    for (const auto &pt : autoLabels)
+        labels.append(LabelledPoint(pt.x, pt.y, pt.z, pt.segment));
+
+    // Proceed with normal Train() and Generate()
+    Train(false);
+}
+```
+
+### Workflow with integration
+
+1. User paints a few quick scribbles (5 seconds)
+2. Click "Auto-sample from GMM" → generates 20,000+ clean training points instantly
+3. RF trains on these points (seconds)
+4. RF generates with spatial/textural features → handles edge cases the GMM missed
+5. User inspects, adds corrections, retrains if needed
+
+This eliminates the most tedious step (manual sample painting) while preserving the full power of the Random Forest for difficult cases.

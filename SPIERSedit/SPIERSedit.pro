@@ -61,6 +61,7 @@ FORMS += ui/import.ui \
 
 HEADERS += src/display.h \
     src/gmm.h \
+    src/gmmautosample.h \
     src/grabcut.h \
     src/grabcutdialogimpl.h \
     src/grabcutglobals.h \
@@ -105,6 +106,7 @@ HEADERS += src/display.h \
 
 SOURCES += src/display.cpp \
     src/gmm.cpp \
+    src/gmmautosample.cpp \
     src/grabcut.cpp \
     src/grabcutdialogimpl.cpp \
     src/grabcutglobals.cpp \
