@@ -17,7 +17,7 @@
 
 #include "display.h"
 #include "globals.h"
-#include "grabcutglobals.h"
+#include "grabcut.h"
 #include "fileio.h"
 #include "mainwindowimpl.h"
 #include "histogram.h"
@@ -682,51 +682,78 @@ void MakeBlankGreyScale(int seg, int fnum, bool flag = false)
 }
 
 /**
- * @brief Apply a cached GrabCut alpha result to GA[seg] for the given slice.
- *
- * Reads the pre-computed alpha data from grabCutAlphaCache (populated by the
- * GrabCut dialog or inter-slice propagation) and writes it into GA[seg],
- * respecting the mask-locking system. Pixels that are locked (via masks or
- * the lock brush) are not overwritten.
- *
- * If no cached alpha exists for this segment/slice combination, the function
- * does nothing — the existing GA[] data is preserved.
- *
- * @param seg   Segment index (0-based).
- * @param fnum  File/slice index (0-based).
- * @param flag  If true, skip LoadAllData/SaveGreyData (caller manages I/O).
+ * @brief Generate segment data using GMM classification.
  */
-void MakeGrabCutGreyScale(int seg, int fnum, bool flag)
+void MakeGmmGreyScale(int seg, int fnum, bool flag)
 {
-    QPair<int, int> key(seg, fnum);
-    if (!grabCutAlphaCache.contains(key))
-        return;
-
     if (!flag) LoadAllData(fnum);
-
     if (Segments[seg]->Locked) return;
 
-    uchar *data = GA[seg]->bits();
-    const QByteArray &alphaData = grabCutAlphaCache[key];
-
+    QByteArray trimap(fwidth * fheight, static_cast<char>(128));
     QByteArray newLocks = DoMaskLocking();
 
     for (int h = 0; h < fheight; h++)
     {
         for (int w = 0; w < fwidth; w++)
         {
-            int pos = fwidth * h + w;
-            if (!(newLocks[pos]))
+            int pos = h * fwidth + w;
+            if (newLocks[pos])
             {
-                int srcByte = h * fwidth4 + w;
-                if (srcByte < alphaData.size())
-                    *(data + (fwidth4 * h + w)) = static_cast<uchar>(alphaData.at(srcByte));
+                int bestSeg = -1;
+                int bestVal = 0;
+                for (int s = 0; s < SegmentCount; s++)
+                {
+                    if (!Segments[s]->Activated) continue;
+                    int val = static_cast<int>(*(GA[s]->bits() + h * fwidth4 + w));
+                    if (val > bestVal)
+                    {
+                        bestVal = val;
+                        bestSeg = s;
+                    }
+                }
+                if (bestSeg == seg && bestVal >= 128)
+                    trimap[pos] = static_cast<char>(255);
+                else if (bestVal >= 128)
+                    trimap[pos] = static_cast<char>(0);
             }
+        }
+    }
+
+    bool hasFg = false;
+    bool hasBg = false;
+    for (int i = 0; i < fwidth * fheight; i++)
+    {
+        if (static_cast<uchar>(trimap.at(i)) == 255) hasFg = true;
+        if (static_cast<uchar>(trimap.at(i)) == 0) hasBg = true;
+        if (hasFg && hasBg) break;
+    }
+    if (!hasFg || !hasBg)
+    {
+        if (!flag) SaveGreyData(fnum, seg);
+        return;
+    }
+
+    GrabCut gc;
+    gc.setImage(ColArray);
+    gc.setTrimap(trimap);
+    gc.initialise();
+    gc.run(1);
+
+    const std::vector<uchar> &alpha = gc.alpha();
+    uchar *data = GA[seg]->bits();
+    for (int h = 0; h < fheight; h++)
+    {
+        for (int w = 0; w < fwidth; w++)
+        {
+            int pos = h * fwidth + w;
+            if (!newLocks[pos])
+                *(data + (h * fwidth4 + w)) = alpha[static_cast<size_t>(pos)];
         }
     }
 
     if (!flag) SaveGreyData(fnum, seg);
 }
+
 
 void MakeRangeGreyScale(int seg, int fnum, bool flag = false)
 {

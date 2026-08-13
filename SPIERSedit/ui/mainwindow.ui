@@ -370,7 +370,6 @@
     <addaction name="separator"/>
     <addaction name="actionDistribute_over_range"/>
     <addaction name="separator"/>
-    <addaction name="actionAutoSegment_GrabCut"/>
    </widget>
    <widget class="QMenu" name="menuMasks">
     <property name="enabled">
@@ -2028,6 +2027,23 @@
             </widget>
            </item>
           </layout>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="tabGMM">
+        <attribute name="title">
+         <string>GMM</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="gmmLayout">
+         <item>
+          <widget class="QLabel" name="gmmInfoLabel">
+           <property name="text">
+            <string>Paint locked pixels on at least two segments using the segment brush, then click Generate. The GMM will learn colour models from these pixels and classify the rest automatically.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>
@@ -4425,16 +4441,7 @@ Interpreted Images:</string>
     <string>Distribute over range</string>
    </property>
   </action>
-  <action name="actionAutoSegment_GrabCut">
-   <property name="text">
-    <string>Auto-segment (GrabCut)...</string>
-   </property>
-   <property name="toolTip">
-    <string>Interactively segment the current slice using GrabCut and optionally propagate to adjacent slices</string>
-   </property>
-  </action>
-  <action name="actionChange_downsampling">
-   <property name="enabled">
+  <action name="actionChange_downsampling">   <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="text">

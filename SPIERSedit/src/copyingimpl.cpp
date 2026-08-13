@@ -1015,3 +1015,34 @@ past:
     LoadAllData(CurrentFile);
     Brush.resize(Brush_Size, 2, 0);
 }
+
+
+/**
+ * @brief Generate segment data using GMM classification.
+ *
+ * Reads locked pixels across all segments as training scribbles, fits a
+ * 5-component GMM to each segment's colour distribution, and classifies
+ * all remaining pixels by comparing their colour likelihood under each model.
+ *
+ * @param SliceSelectorList  The slice selector widget (selected slices are processed).
+ */
+void CopyingImpl::GenerateGmm(QListWidget *SliceSelectorList)
+{
+    int c = SliceSelectorList->selectedItems().count();
+    if (c > 1) show();
+    copying = true;
+    this->setWindowTitle("Generating GMM segment files...");
+    WriteAllData(CurrentFile);
+    if (c > 1) progressBar->setMaximum(c);
+    int item_count = 0;
+    for (int i = 0; i < Files.count(); i++)
+    {
+        if ((SliceSelectorList->item(i))->isSelected())
+            MakeGmmGreyScale(CurrentSegment, i, false);
+        if (c > 1) progressBar->setValue(item_count++);
+        if (c > 1) qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
+    }
+    LoadAllData(CurrentFile);
+    copying = false;
+    if (c > 1) close();
+}

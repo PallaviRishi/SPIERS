@@ -56,6 +56,6 @@ extern QByteArray DoMaskLocking();
  * @param fnum   File (slice) index
  * @param flag   If true, skip LoadAllData / SaveGreyData (caller manages I/O)
  */
-extern void MakeGrabCutGreyScale(int seg, int fnum, bool flag);
+extern void MakeGmmGreyScale(int seg, int fnum, bool flag);
 
 #endif // __DISPLAY_H__

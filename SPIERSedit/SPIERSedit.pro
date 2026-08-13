@@ -43,7 +43,6 @@ MOC_DIR += build
 OBJECTS_DIR += build
 
 FORMS += ui/import.ui \
-    ui/grabcut.ui \
     ui/mainwindow.ui \
     ui/Copying.ui \
     ui/more.ui \
@@ -63,10 +62,6 @@ HEADERS += src/display.h \
     src/gmm.h \
     src/gmmautosample.h \
     src/grabcut.h \
-    src/grabcutdialogimpl.h \
-    src/grabcutglobals.h \
-    src/grabcutpersistence.h \
-    src/slicepropagation.h \
     src/beamhardening.h \
     src/beamhardeningcentericon.h \
     src/brush.h \
@@ -108,10 +103,6 @@ SOURCES += src/display.cpp \
     src/gmm.cpp \
     src/gmmautosample.cpp \
     src/grabcut.cpp \
-    src/grabcutdialogimpl.cpp \
-    src/grabcutglobals.cpp \
-    src/grabcutpersistence.cpp \
-    src/slicepropagation.cpp \
     src/beamhardening.cpp \
     src/beamhardeningcentericon.cpp \
     src/brush.cpp \

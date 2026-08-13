@@ -61,6 +61,7 @@ public:
     bool copying;
 
     void GenerateRadial(QListWidget *SliceSelectorList, BeamHardening *bh);
+    void GenerateGmm(QListWidget *SliceSelectorList);
 protected:
     void closeEvent(QCloseEvent *event);
 
