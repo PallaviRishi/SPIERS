@@ -272,11 +272,26 @@ macx {
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 13.0
     QMAKE_APPLE_DEVICE_ARCHS = arm64 x86_64
 
-    OPENCV_DIR = /Users/alanspencer/Documents/Programing/OpenCV
+    # OpenCV via Homebrew. Allow override with qmake OPENCV_DIR=/path/to/opencv
+    isEmpty(OPENCV_DIR) {
+        HOMEBREW_OPENCV = $$system(brew --prefix opencv 2>/dev/null)
+        !isEmpty(HOMEBREW_OPENCV): OPENCV_DIR = $$HOMEBREW_OPENCV
+        else: OPENCV_DIR = /opt/homebrew/opt/opencv
+    }
+    isEmpty(OPENCV_DIR): error("OpenCV not found. Install it (brew install opencv) or set OPENCV_DIR.")
 
-    INCLUDEPATH += $$OPENCV_DIR/include/opencv4
+    # Homebrew OpenCV 5 headers live under include/opencv5; OpenCV 4 under include/opencv4
+    exists($$OPENCV_DIR/include/opencv5): INCLUDEPATH += $$OPENCV_DIR/include/opencv5
+    else:exists($$OPENCV_DIR/include/opencv4): INCLUDEPATH += $$OPENCV_DIR/include/opencv4
+    else: INCLUDEPATH += $$OPENCV_DIR/include
+
+    # Homebrew ships split OpenCV libs (no opencv_world)
     LIBS += -L$$OPENCV_DIR/lib \
-            -lopencv_world
+            -lopencv_core \
+            -lopencv_imgproc \
+            -lopencv_imgcodecs \
+            -lopencv_highgui \
+            -lopencv_ml
     QMAKE_RPATHDIR += $$OPENCV_DIR/lib
 
     # Mac icon
