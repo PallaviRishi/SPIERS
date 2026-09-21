@@ -97,3 +97,20 @@ test_grabcut.pro
 .DS_Store
 CLAUDE.local.md
 .claude/settings.local.json
+# qmake / Qt build artifacts
+Makefile.Debug
+Makefile.Release
+.qmake.stash
+.qmake.cache
+*/release/
+*/debug/
+release/
+debug/
+object_script.*
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.moc
+# Keep the committed qrc source that is checked into the repo
+!SPIERSview/src/qrc_sview.cpp
