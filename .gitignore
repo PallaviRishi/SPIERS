@@ -40,6 +40,9 @@ SPIERS.pro.user.*
 /docs/_build/*
 /docs/_templates
 /docs/_templates/*
+SPIERSalign/docs_build/
+SPIERSedit/docs_build/
+SPIERSview/docs_build/
 
 # Misc 
 make.bat
@@ -61,6 +64,8 @@ SPIERSview/build/
 SPIERSedit/bin/
 SPIERSalign/bin/
 SPIERSview/bin/
+build*/
+bin*/
 
 # Test binaries and output
 fast_test
@@ -88,3 +93,7 @@ test_grabcut.pro
 
 # PDF documents (not part of codebase)
 *.pdf
+
+.DS_Store
+CLAUDE.local.md
+.claude/settings.local.json
