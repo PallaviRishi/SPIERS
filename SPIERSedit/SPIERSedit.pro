@@ -270,7 +270,14 @@ win32 {
 # MacOS common build here
 macx {
     QMAKE_MACOSX_DEPLOYMENT_TARGET = 13.0
-    QMAKE_APPLE_DEVICE_ARCHS = arm64 x86_64
+
+    # Build for the host architecture by default so it links against
+    # single-arch Homebrew Qt/OpenCV. Override with:
+    #   qmake QMAKE_APPLE_DEVICE_ARCHS="arm64 x86_64"  (needs universal libs)
+    isEmpty(QMAKE_APPLE_DEVICE_ARCHS) {
+        HOST_ARCH = $$system(uname -m)
+        QMAKE_APPLE_DEVICE_ARCHS = $$HOST_ARCH
+    }
 
     # OpenCV via Homebrew. Allow override with qmake OPENCV_DIR=/path/to/opencv
     isEmpty(OPENCV_DIR) {
