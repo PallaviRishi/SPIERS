@@ -18,9 +18,13 @@
 #include "display.h"
 #include "globals.h"
 #include "grabcut.h"
+#include "gmm.h"
 #include "fileio.h"
 #include "mainwindow.h"
 #include "histogram.h"
+
+#include <algorithm>
+#include <vector>
 
 #include <QGraphicsPixmapItem>
 #include <QImage>
@@ -1124,6 +1128,323 @@ void MakeGmmGreyScale(int seg, int fnum, bool flag)
     }
 
     if (!flag) SaveGreyData(fnum, seg);
+}
+
+
+/**
+ * @brief Compute a 3-feature vector per pixel for GMM segmentation.
+ *
+ * On greyscale CT data, raw per-pixel intensity alone cannot separate fossil
+ * from matrix where their brightness ranges overlap. This augments intensity
+ * with local texture/context — the kind of information the random-forest ML
+ * system gets from its feature set.
+ *
+ * Features (all normalised to ~[0,1]):
+ *   [0] intensity        — pixel grey / 255
+ *   [1] local mean       — mean grey over a 5x5 window / 255
+ *   [2] distance-to-dark — normalised distance from the pixel to the nearest
+ *                          dark "substrate" pixel (grey < DARK_THRESHOLD).
+ *
+ * The distance-to-dark feature captures spatial context that pure appearance
+ * cannot: on this data the fossil sits enclosed within a dark oval substrate,
+ * so fossil pixels are a bounded distance from dark substrate on all sides,
+ * whereas open-matrix pixels outside the oval can be much further from any
+ * dark pixel. This helps separate fossil from matrix that looks identical in
+ * brightness/texture but lies outside the substrate.
+ *
+ * Output: flat vector size fwidth*fheight*3, laid out [f0,f1,f2, ...] in
+ * row-major (h*fwidth + w) pixel order.
+ *
+ * @param src  Source slice converted to Format_RGB32 (grey: r==g==b).
+ */
+static std::vector<double> computeGmmFeatures(const QImage &src)
+{
+    const int radius = 2;          // 5x5 window for local mean
+    const int DARK_THRESHOLD = 90; // grey below this = dark substrate (see analysis)
+    const double DIST_SCALE = 40.0; // distances beyond this saturate to 1.0
+
+    const uchar *bits = src.bits();
+    const int bpl = src.bytesPerLine();
+    const size_t N = static_cast<size_t>(fwidth) * fheight;
+
+    // Extract the grey plane once (red channel; r==g==b for greyscale).
+    std::vector<int> grey(N);
+    for (int h = 0; h < fheight; h++)
+        for (int w = 0; w < fwidth; w++)
+            grey[static_cast<size_t>(h) * fwidth + w] = bits[h * bpl + w * 4 + 2];
+
+    // --- Distance transform: distance from each pixel to nearest dark pixel ---
+    // Two-pass chamfer approximation of Euclidean distance (weights 1 / sqrt2).
+    const double BIG = 1e9;
+    const double D1 = 1.0, D2 = 1.41421356;
+    std::vector<double> dist(N, BIG);
+    for (size_t i = 0; i < N; i++)
+        if (grey[i] < DARK_THRESHOLD) dist[i] = 0.0; // dark substrate = seed
+
+    auto at = [&](int x, int y) -> double & { return dist[static_cast<size_t>(y) * fwidth + x]; };
+
+    // Forward pass (top-left to bottom-right)
+    for (int y = 0; y < fheight; y++)
+        for (int x = 0; x < fwidth; x++)
+        {
+            double v = at(x, y);
+            if (x > 0)                 v = std::min(v, at(x - 1, y) + D1);
+            if (y > 0)                 v = std::min(v, at(x, y - 1) + D1);
+            if (x > 0 && y > 0)        v = std::min(v, at(x - 1, y - 1) + D2);
+            if (x < fwidth - 1 && y > 0) v = std::min(v, at(x + 1, y - 1) + D2);
+            at(x, y) = v;
+        }
+    // Backward pass (bottom-right to top-left)
+    for (int y = fheight - 1; y >= 0; y--)
+        for (int x = fwidth - 1; x >= 0; x--)
+        {
+            double v = at(x, y);
+            if (x < fwidth - 1)              v = std::min(v, at(x + 1, y) + D1);
+            if (y < fheight - 1)             v = std::min(v, at(x, y + 1) + D1);
+            if (x < fwidth - 1 && y < fheight - 1) v = std::min(v, at(x + 1, y + 1) + D2);
+            if (x > 0 && y < fheight - 1)    v = std::min(v, at(x - 1, y + 1) + D2);
+            at(x, y) = v;
+        }
+
+    std::vector<double> feat(N * 3);
+
+    for (int h = 0; h < fheight; h++)
+    {
+        for (int w = 0; w < fwidth; w++)
+        {
+            int pos = h * fwidth + w;
+
+            // Local mean over the 5x5 window (clamped at edges).
+            long sum = 0;
+            int count = 0;
+            int h0 = std::max(0, h - radius), h1 = std::min(fheight - 1, h + radius);
+            int w0 = std::max(0, w - radius), w1 = std::min(fwidth - 1, w + radius);
+            for (int hh = h0; hh <= h1; hh++)
+                for (int ww = w0; ww <= w1; ww++)
+                {
+                    sum += grey[static_cast<size_t>(hh) * fwidth + ww];
+                    count++;
+                }
+            double mean = static_cast<double>(sum) / count;
+
+            double d = dist[static_cast<size_t>(pos)] / DIST_SCALE;
+            if (d > 1.0) d = 1.0;
+
+            feat[static_cast<size_t>(pos) * 3 + 0] = grey[static_cast<size_t>(pos)] / 255.0;
+            feat[static_cast<size_t>(pos) * 3 + 1] = mean / 255.0;
+            feat[static_cast<size_t>(pos) * 3 + 2] = d;
+        }
+    }
+
+    return feat;
+}
+
+
+/**
+ * @brief Train one foreground and one background GMM from the locked pixels
+ *        across all selected slices.
+ *
+ * Unlike MakeGmmGreyScale (which builds a per-slice GrabCut and skips slices
+ * with no local locks), this gathers feature samples from every selected slice
+ * that has locks, so a single model can then be applied to the whole stack.
+ * Pixels are described by the texture-aware vector from computeGmmFeatures
+ * rather than raw intensity, so fossil and matrix can be separated even where
+ * their brightness overlaps.
+ *
+ * Foreground = pixels locked and assigned to segment fgSeg.
+ * Background = pixels locked and assigned to any other active segment.
+ *
+ * @param SliceSelectorList  The slice selector (selected slices are scanned).
+ * @param fgGmm  Output foreground model (fitted in place).
+ * @param bgGmm  Output background model (fitted in place).
+ * @param fgSeg  The segment index treated as foreground.
+ * @return true if both fg and bg had enough samples to train, false otherwise.
+ */
+bool TrainGmmModels(QListWidget *SliceSelectorList, GMM &fgGmm, GMM &bgGmm, int fgSeg)
+{
+    std::vector<double> fgPixels;
+    std::vector<double> bgPixels;
+
+    for (int i = 0; i < Files.count(); i++)
+    {
+        if (!(SliceSelectorList->item(i))->isSelected()) continue;
+
+        LoadAllData(i);
+
+        QByteArray locks = DoMaskLocking();
+        QImage src = ColArray.convertToFormat(QImage::Format_RGB32);
+        std::vector<double> feat = computeGmmFeatures(src);
+
+        for (int h = 0; h < fheight; h++)
+        {
+            for (int w = 0; w < fwidth; w++)
+            {
+                int pos = h * fwidth + w;
+                if (!static_cast<uchar>(locks.at(pos))) continue; // only locked pixels train
+
+                // Determine which segment this locked pixel belongs to
+                int bestSeg = -1;
+                int bestVal = 0;
+                for (int s = 0; s < SegmentCount; s++)
+                {
+                    if (!Segments[s]->Activated) continue;
+                    int val = static_cast<int>(*(GA[s]->bits() + h * fwidth4 + w));
+                    if (val > bestVal)
+                    {
+                        bestVal = val;
+                        bestSeg = s;
+                    }
+                }
+                if (bestVal < 128) continue; // not clearly assigned to any segment
+
+                double f0 = feat[static_cast<size_t>(pos) * 3 + 0];
+                double f1 = feat[static_cast<size_t>(pos) * 3 + 1];
+                double f2 = feat[static_cast<size_t>(pos) * 3 + 2];
+
+                if (bestSeg == fgSeg)
+                {
+                    fgPixels.push_back(f0);
+                    fgPixels.push_back(f1);
+                    fgPixels.push_back(f2);
+                }
+                else
+                {
+                    bgPixels.push_back(f0);
+                    bgPixels.push_back(f1);
+                    bgPixels.push_back(f2);
+                }
+            }
+        }
+    }
+
+    int fgN = static_cast<int>(fgPixels.size() / 3);
+    int bgN = static_cast<int>(bgPixels.size() / 3);
+
+    if (fgN < GMM::K || bgN < GMM::K) return false; // not enough training data
+
+    fgGmm.initFromSamples(fgPixels, fgN);
+    fgGmm.fit(fgPixels, fgN, 5);
+    bgGmm.initFromSamples(bgPixels, bgN);
+    bgGmm.fit(bgPixels, bgN, 5);
+
+    return true;
+}
+
+
+/**
+ * @brief Classify every unlocked pixel of one slice using pre-trained GMMs.
+ *
+ * Applies the shared foreground/background models to the slice regardless of
+ * whether that slice has any locks of its own — this is what lets GMM segment
+ * the whole stack rather than only locked slices. Locked pixels are left as the
+ * user painted them.
+ *
+ * @param fnum   Slice index.
+ * @param fgGmm  Trained foreground model.
+ * @param bgGmm  Trained background model.
+ * @param seg    Segment to write the classification into.
+ */
+void ClassifyGmmSlice(int fnum, const GMM &fgGmm, const GMM &bgGmm, int seg)
+{
+    LoadAllData(fnum);
+    if (Segments[seg]->Locked) return;
+
+    QByteArray locks = DoMaskLocking();
+    QImage src = ColArray.convertToFormat(QImage::Format_RGB32);
+    std::vector<double> feat = computeGmmFeatures(src);
+    uchar *data = GA[seg]->bits();
+
+    for (int h = 0; h < fheight; h++)
+    {
+        for (int w = 0; w < fwidth; w++)
+        {
+            int pos = h * fwidth + w;
+            if (static_cast<uchar>(locks.at(pos))) continue; // keep locked pixels as painted
+
+            double f0 = feat[static_cast<size_t>(pos) * 3 + 0];
+            double f1 = feat[static_cast<size_t>(pos) * 3 + 1];
+            double f2 = feat[static_cast<size_t>(pos) * 3 + 2];
+
+            double pFg = fgGmm.probability(f0, f1, f2);
+            double pBg = bgGmm.probability(f0, f1, f2);
+
+            *(data + (h * fwidth4 + w)) = (pFg > pBg) ? static_cast<uchar>(255) : static_cast<uchar>(0);
+        }
+    }
+
+    // --- Connectivity clean-up (island removal) ---
+    // A fossil is normally one continuous object, not scattered specks. Remove
+    // small isolated foreground blobs, keeping only components at or above a
+    // size threshold. This runs on the current foreground map (classified +
+    // locked pixels), so a small region that the user explicitly locked stays
+    // anchored via its neighbours.
+    {
+        const int MIN_COMPONENT = 25; // drop foreground blobs smaller than this (px)
+
+        // Build a foreground mask: classified 255 OR locked-as-this-segment.
+        std::vector<uchar> fg(static_cast<size_t>(fwidth) * fheight, 0);
+        for (int h = 0; h < fheight; h++)
+            for (int w = 0; w < fwidth; w++)
+                if (*(data + (h * fwidth4 + w)) >= 128)
+                    fg[static_cast<size_t>(h) * fwidth + w] = 1;
+
+        std::vector<int> label(static_cast<size_t>(fwidth) * fheight, 0);
+        std::vector<int> stack;
+        int nextLabel = 0;
+        std::vector<int> compSize;
+        compSize.push_back(0); // label 0 = unlabelled/background placeholder
+
+        for (int h = 0; h < fheight; h++)
+        {
+            for (int w = 0; w < fwidth; w++)
+            {
+                size_t start = static_cast<size_t>(h) * fwidth + w;
+                if (!fg[start] || label[start]) continue;
+
+                nextLabel++;
+                int size = 0;
+                stack.push_back(static_cast<int>(start));
+                label[start] = nextLabel;
+                while (!stack.empty())
+                {
+                    int p = stack.back();
+                    stack.pop_back();
+                    size++;
+                    int px = p % fwidth, py = p / fwidth;
+                    // 4-connectivity
+                    const int dx[4] = {-1, 1, 0, 0};
+                    const int dy[4] = {0, 0, -1, 1};
+                    for (int k = 0; k < 4; k++)
+                    {
+                        int nx = px + dx[k], ny = py + dy[k];
+                        if (nx < 0 || ny < 0 || nx >= fwidth || ny >= fheight) continue;
+                        size_t np = static_cast<size_t>(ny) * fwidth + nx;
+                        if (fg[np] && !label[np])
+                        {
+                            label[np] = nextLabel;
+                            stack.push_back(static_cast<int>(np));
+                        }
+                    }
+                }
+                compSize.push_back(size);
+            }
+        }
+
+        // Zero out unlocked pixels belonging to small components.
+        for (int h = 0; h < fheight; h++)
+        {
+            for (int w = 0; w < fwidth; w++)
+            {
+                int pos = h * fwidth + w;
+                if (static_cast<uchar>(locks.at(pos))) continue; // never touch locked pixels
+                int lab = label[static_cast<size_t>(pos)];
+                if (lab > 0 && compSize[static_cast<size_t>(lab)] < MIN_COMPONENT)
+                    *(data + (h * fwidth4 + w)) = static_cast<uchar>(0);
+            }
+        }
+    }
+
+    SaveGreyData(fnum, seg);
 }
 
 

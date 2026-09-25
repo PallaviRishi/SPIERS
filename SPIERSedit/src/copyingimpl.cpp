@@ -1035,12 +1035,31 @@ void CopyingImpl::GenerateGmm(QListWidget *SliceSelectorList)
     copying = true;
     this->setWindowTitle("Generating GMM segment files...");
     WriteAllData(CurrentFile);
+
+    // Pass 1: train a single fg/bg GMM from the locked pixels across ALL
+    // selected slices. This lets the model be applied to every slice, not just
+    // the ones that happen to have local locks (which is what the old per-slice
+    // approach was limited to).
+    GMM fgGmm, bgGmm;
+    bool trained = TrainGmmModels(SliceSelectorList, fgGmm, bgGmm, CurrentSegment);
+    if (!trained)
+    {
+        LoadAllData(CurrentFile);
+        copying = false;
+        if (c > 1) close();
+        Message("GMM training needs locked pixels on at least two segments "
+                "(one for the current segment, one for another). Paint a "
+                "training sample with the segment brush (locks on) and try again.");
+        return;
+    }
+
+    // Pass 2: classify every selected slice using the shared trained model.
     if (c > 1) progressBar->setMaximum(c);
     int item_count = 0;
     for (int i = 0; i < Files.count(); i++)
     {
         if ((SliceSelectorList->item(i))->isSelected())
-            MakeGmmGreyScale(CurrentSegment, i, false);
+            ClassifyGmmSlice(i, fgGmm, bgGmm, CurrentSegment);
         if (c > 1) progressBar->setValue(item_count++);
         if (c > 1) qApp->processEvents(QEventLoop::ExcludeUserInputEvents);
     }

@@ -24,8 +24,11 @@
 #include "globals.h"
 #include "bytearray2d.h"
 #include "beamhardening.h"
+#include "gmm.h"
 #include <QList>
 #include "labelledpoint.h"
+
+class QListWidget;
 
 extern void ShowImage(QGraphicsView *gv);
 extern void InitImage(QGraphicsView *gv);
@@ -63,5 +66,17 @@ extern QVector<int> GetSegmentMap();
  * @param flag   If true, skip LoadAllData / SaveGreyData (caller manages I/O)
  */
 extern void MakeGmmGreyScale(int seg, int fnum, bool flag);
+
+/**
+ * @brief Train shared fg/bg GMMs from locked pixels across all selected slices.
+ * @return true if both classes had enough samples to train.
+ */
+extern bool TrainGmmModels(QListWidget *SliceSelectorList, GMM &fgGmm, GMM &bgGmm, int fgSeg);
+
+/**
+ * @brief Classify all unlocked pixels of one slice using pre-trained GMMs,
+ *        writing the result into segment seg. Applies to any slice, locked or not.
+ */
+extern void ClassifyGmmSlice(int fnum, const GMM &fgGmm, const GMM &bgGmm, int seg);
 
 #endif // __DISPLAY_H__
