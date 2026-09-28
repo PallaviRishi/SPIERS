@@ -82,6 +82,12 @@ bool CnnSegmenter::train(const std::vector<CnnSlice> &slices, int numClasses,
     if (slices.empty() || numClasses < 2)
         return false;
 
+    // Make training reproducible run-to-run: fix torch's RNG (weight init,
+    // dropout, etc.) and reseed the patch sampler. Without this, comparing
+    // hyperparameters is meaningless because each run trains differently.
+    torch::manual_seed(1234);
+    CnnData::ResetSampler(1234);
+
     numClasses_ = numClasses;
     model = UNet(1, numClasses, 16);
     model->to(device);
@@ -114,9 +120,13 @@ bool CnnSegmenter::train(const std::vector<CnnSlice> &slices, int numClasses,
         double sumW = 0.0;
         for (int c = 0; c < numClasses; c++)
         {
-            // inverse frequency; guard against empty classes
+            // Milder than pure inverse-frequency: use sqrt(1/freq). Full inverse
+            // frequency over-corrects on heavily imbalanced data (the model then
+            // over-segments the rare class); the square root gives the rare
+            // class a strong-but-not-overwhelming boost, for a better
+            // precision/recall balance. Guard against empty classes.
             double freq = classCounts[static_cast<size_t>(c)] / totalCounted;
-            double w = (freq > 0.0) ? (1.0 / freq) : 0.0;
+            double w = (freq > 0.0) ? std::sqrt(1.0 / freq) : 0.0;
             wAcc[c] = static_cast<float>(w);
             sumW += w;
         }

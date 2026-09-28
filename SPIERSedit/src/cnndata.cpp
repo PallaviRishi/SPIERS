@@ -25,6 +25,20 @@
 namespace CnnData
 {
 
+// Patch-sampler RNG. Kept at namespace scope so a whole training run draws a
+// continuous sequence, but resettable (ResetSampler) so each training run is
+// reproducible from a fixed seed — essential for meaningful A/B tuning.
+static std::mt19937 &SamplerRng()
+{
+    static std::mt19937 rng(1234);
+    return rng;
+}
+
+void ResetSampler(unsigned int seed)
+{
+    SamplerRng().seed(seed);
+}
+
 long GatherTrainingSlices(QListWidget *sliceSelector, int percentage,
                           std::vector<CnnSlice> &out)
 {
@@ -106,7 +120,7 @@ bool SamplePatchBatch(const std::vector<CnnSlice> &slices, int patchSize,
     labels = torch::full({batchSize, patchSize, patchSize},
                          static_cast<int64_t>(kIgnoreIndex), torch::kLong);
 
-    static std::mt19937 rng(1234);
+    std::mt19937 &rng = SamplerRng();
 
     int produced = 0;
     int attempts = 0;

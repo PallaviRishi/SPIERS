@@ -46,6 +46,9 @@ namespace CnnData
 /// Label value marking a pixel that carries no supervision (excluded from loss).
 constexpr long kIgnoreIndex = -100; // matches torch cross-entropy default ignore_index
 
+/// Reseed the patch-sampler RNG so a training run is reproducible.
+void ResetSampler(unsigned int seed);
+
 /**
  * @brief Gather full-slice training tensors from all selected slices.
  *
