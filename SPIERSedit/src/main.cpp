@@ -33,6 +33,7 @@
 #include "mainwindow.h"
 #include "globals.h"
 #include "mlinterface.h"
+#include "torchcheck.h"
 #include "../../SPIERScommon/src/customstyletheme.h"
 #include "../../SPIERScommon/src/netmodule.h"
 #include "../../SPIERScommon/src/crashdetector.h"
@@ -331,6 +332,8 @@ int main(int argc, char *argv[])
     {
         mlInterface = new MLInterface();
     }
+
+    qDebug() << "Torch check:" << TorchCheck();
 
     MainWindow win;
     win.show();

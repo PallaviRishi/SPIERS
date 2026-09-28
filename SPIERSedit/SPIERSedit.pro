@@ -18,7 +18,11 @@ CONFIG += qt \
     debug_and_release \
     warn_on \
     thread \
-    sdk_no_version_check
+    sdk_no_version_check \
+    c++20
+
+# LibTorch (PyTorch C++) requires C++20 with recent libc++ headers.
+QMAKE_CXXFLAGS += -std=c++20
 
 RESOURCES = SPIERSedit.qrc \
     ../SPIERScommon/commonresources.qrc
@@ -59,6 +63,7 @@ FORMS += ui/newprojectdialog.ui \
     ui/about.ui
 
 HEADERS += src/display.h \
+    src/torchcheck.h \
     src/gmm.h \
     src/gmmautosample.h \
     src/grabcut.h \
@@ -141,6 +146,7 @@ HEADERS += src/display.h \
 macx: HEADERS += src/main.h
 
 SOURCES += src/display.cpp \
+    src/torchcheck.cpp \
     src/gmm.cpp \
     src/gmmautosample.cpp \
     src/grabcut.cpp \
@@ -300,6 +306,22 @@ macx {
             -lopencv_highgui \
             -lopencv_ml
     QMAKE_RPATHDIR += $$OPENCV_DIR/lib
+
+    # LibTorch (PyTorch C++) via Homebrew 'pytorch'. Override with TORCH_DIR=/path.
+    isEmpty(TORCH_DIR) {
+        HOMEBREW_TORCH = $$system(brew --prefix pytorch 2>/dev/null)
+        !isEmpty(HOMEBREW_TORCH): TORCH_DIR = $$HOMEBREW_TORCH
+        else: TORCH_DIR = /opt/homebrew/opt/pytorch
+    }
+    isEmpty(TORCH_DIR): error("LibTorch not found. Install it (brew install pytorch) or set TORCH_DIR.")
+
+    INCLUDEPATH += $$TORCH_DIR/include \
+                   $$TORCH_DIR/include/torch/csrc/api/include
+    LIBS += -L$$TORCH_DIR/lib \
+            -ltorch \
+            -ltorch_cpu \
+            -lc10
+    QMAKE_RPATHDIR += $$TORCH_DIR/lib
 
     # Mac icon
     ICON = resources/SPIERSeditIcon.icns
