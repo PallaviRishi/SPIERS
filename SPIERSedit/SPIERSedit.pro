@@ -65,6 +65,7 @@ FORMS += ui/newprojectdialog.ui \
 HEADERS += src/display.h \
     src/torchcheck.h \
     src/cnndata.h \
+    src/cnnsegmenter.h \
     src/gmm.h \
     src/gmmautosample.h \
     src/grabcut.h \
@@ -149,6 +150,7 @@ macx: HEADERS += src/main.h
 SOURCES += src/display.cpp \
     src/torchcheck.cpp \
     src/cnndata.cpp \
+    src/cnnsegmenter.cpp \
     src/gmm.cpp \
     src/gmmautosample.cpp \
     src/grabcut.cpp \
