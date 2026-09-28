@@ -75,6 +75,7 @@ void CnnInterface::Generate(QListWidget *sliceSelector,
 
         MLUpdateBlockingDialog::updateHighLevelText(QString("Segmenting slice %1").arg(i));
 
+        LoadColourData(i); // load THIS slice's source image into ColArray
         LoadLocks(i);
         LoadMasks(i);
         for (int s = 0; s < SegmentCount; s++)

@@ -90,9 +90,53 @@ bool CnnSegmenter::train(const std::vector<CnnSlice> &slices, int numClasses,
     torch::optim::Adam optimizer(model->parameters(),
                                  torch::optim::AdamOptions(1e-3));
 
+    // --- Class-balanced loss weights ---
+    // Fossil pixels are far rarer than background, so plain cross-entropy
+    // collapses toward the majority class (the model under-segments). Count
+    // each class's labelled pixels across all training slices and weight the
+    // loss inversely to frequency, so rare classes get proportionally more
+    // influence. Weights are normalised to mean ~1 for a stable learning rate.
+    std::vector<double> classCounts(static_cast<size_t>(numClasses), 0.0);
+    for (const CnnSlice &cs : slices)
+    {
+        torch::Tensor lab = cs.labels;
+        for (int c = 0; c < numClasses; c++)
+            classCounts[static_cast<size_t>(c)] +=
+                (lab == static_cast<int64_t>(c)).sum().item<double>();
+    }
+    double totalCounted = 0.0;
+    for (double v : classCounts) totalCounted += v;
+
+    torch::Tensor classWeights = torch::ones({numClasses}, torch::kFloat32);
+    if (totalCounted > 0.0)
+    {
+        auto wAcc = classWeights.accessor<float, 1>();
+        double sumW = 0.0;
+        for (int c = 0; c < numClasses; c++)
+        {
+            // inverse frequency; guard against empty classes
+            double freq = classCounts[static_cast<size_t>(c)] / totalCounted;
+            double w = (freq > 0.0) ? (1.0 / freq) : 0.0;
+            wAcc[c] = static_cast<float>(w);
+            sumW += w;
+        }
+        // normalise so the mean weight is ~1 (keeps loss scale/LR sensible)
+        if (sumW > 0.0)
+        {
+            float scale = static_cast<float>(numClasses) / static_cast<float>(sumW);
+            classWeights = classWeights * scale;
+        }
+        qDebug() << "CNN class counts (per class):";
+        for (int c = 0; c < numClasses; c++)
+            qDebug() << "  class" << c << "count" << classCounts[static_cast<size_t>(c)]
+                     << "weight" << classWeights[c].item<float>();
+    }
+    classWeights = classWeights.to(device);
+
     auto lossFn = torch::nn::CrossEntropyLoss(
-        torch::nn::CrossEntropyLossOptions().ignore_index(
-            static_cast<int64_t>(CnnData::kIgnoreIndex)));
+        torch::nn::CrossEntropyLossOptions()
+            .ignore_index(static_cast<int64_t>(CnnData::kIgnoreIndex))
+            .weight(classWeights));
 
     lastLoss = 0.0;
     int realIters = 0;

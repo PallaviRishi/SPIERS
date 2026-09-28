@@ -39,7 +39,7 @@ public:
      */
     void Generate(QListWidget *sliceSelector,
                   int samplePercent = 100,
-                  int epochs = 300,
+                  int epochs = 800,
                   int patchSize = 64,
                   int batchSize = 16);
 
