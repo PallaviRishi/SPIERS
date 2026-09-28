@@ -23,6 +23,7 @@
 #include "exportdxf.h"
 #include "mainwindow.h"
 #include "copyingimpl.h"
+#include "cnnbridge.h"
 #include "exportspv.h"
 #include "selectsegmentimpl.h"
 #include "globals.h"
@@ -1244,6 +1245,7 @@ void MainWindow::on_GenerateButton_clicked()
         chkGradientsPreview->setChecked(false); //always turn off preview after a generate
     }
     if (tabwidget->currentIndex() == 6) dialog.GenerateGmm(SliceSelectorList);
+    if (tabwidget->currentIndex() == 7) RunCnnGenerate(SliceSelectorList);
     ShowImage(graphicsView);
 }
 

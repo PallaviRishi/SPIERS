@@ -2359,6 +2359,23 @@
          </item>
         </layout>
        </widget>
+       <widget class="QWidget" name="tabCNN">
+        <attribute name="title">
+         <string>CNN</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="cnnLayout">
+         <item>
+          <widget class="QLabel" name="cnnInfoLabel">
+           <property name="text">
+            <string>Paint locked pixels on at least two segments using the segment brush (locks on), select the slices to use, then click Generate. A U-Net neural network is trained on the painted pixels and used to segment the selected slices. More painted training data generally improves results.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
       </widget>
      </item>
      <item>
